@@ -1,0 +1,92 @@
+[
+ {
+  "id": 1,
+  "name": "Broken",
+  "description": "Samples that are broken",
+  "test_count": 13
+ },
+ {
+  "id": 11,
+  "name": "CEA-708",
+  "description": "Samples that make use of the CEA-708 standard.",
+  "test_count": 14
+ },
+ {
+  "id": 2,
+  "name": "DVB",
+  "description": "Samples that contain DVB subtitles",
+  "test_count": 7
+ },
+ {
+  "id": 13,
+  "name": "DVD",
+  "description": "DVD samples",
+  "test_count": 3
+ },
+ {
+  "id": 3,
+  "name": "DVR-MS",
+  "description": "Samples that are stored in the proprietary DVR-MS format.",
+  "test_count": 2
+ },
+ {
+  "id": 4,
+  "name": "General",
+  "description": "General regression samples",
+  "test_count": 27
+ },
+ {
+  "id": 15,
+  "name": "Hardsubx",
+  "description": "Samples that have burned in subtitles",
+  "test_count": 1
+ },
+ {
+  "id": 5,
+  "name": "Hauppage",
+  "description": "Samples recorded with Hauppage equipment",
+  "test_count": 3
+ },
+ {
+  "id": 6,
+  "name": "MP4",
+  "description": "Samples that are stored in the MP4 format.",
+  "test_count": 3
+ },
+ {
+  "id": 12,
+  "name": "Multiprogram",
+  "description": "Samples containing multiple programs in one file.",
+  "test_count": 0
+ },
+ {
+  "id": 7,
+  "name": "NoCC",
+  "description": "Samples that contain no, or unrecognized closed captions.",
+  "test_count": 10
+ },
+ {
+  "id": 14,
+  "name": "Options",
+  "description": "A category of tests to check if input/output and configuration options of CCExtractor work as intended.",
+  "test_count": 86
+ },
+ {
+  "id": 8,
+  "name": "Teletext",
+  "description": "Samples with teletext.",
+  "test_count": 21
+ },
+ {
+  "id": 9,
+  "name": "WTV",
+  "description": "Samples that are stored in the proprietary WTV format.",
+  "test_count": 13
+ },
+ {
+  "id": 10,
+  "name": "XDS",
+  "description": "Samples that have XDS data.",
+  "test_count": 34
+ }
+]

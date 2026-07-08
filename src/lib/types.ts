@@ -1,0 +1,161 @@
+// Shapes match src/mocks/generated/*.json, extracted from the production DB
+// dump (2026-06 snapshot). When the real API lands these become the generated
+// OpenAPI types; field names already mirror mod_api schema conventions.
+
+export type Platform = "linux" | "windows";
+
+/** Normalized run statuses from mod_api services/status.py, plus the VM
+ * progress phases used by the dry-run stepper. */
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "pass"
+  | "fail"
+  | "canceled"
+  | "error"
+  | "incomplete"
+  | "preparation"
+  | "building"
+  | "testing"
+  | "completed";
+
+export type SparkResult = "pass" | "fail" | "skip";
+
+export interface Category {
+  id: number;
+  name: string;
+  description: string;
+  test_count: number;
+}
+
+export interface Baseline {
+  id: number;
+  hash: string;
+  extension: string;
+  ignore: boolean;
+  /** Alternative accepted output hashes ("variants"). */
+  variants: string[];
+}
+
+export interface RegressionTest {
+  id: number;
+  sample_id: number;
+  sample_name: string;
+  sample_sha: string;
+  command: string;
+  input_type: string | null;
+  output_type: string | null;
+  expected_rc: number;
+  active: boolean;
+  description: string;
+  categories: string[];
+  baselines: Baseline[];
+  last_passed_linux: number | null;
+  last_passed_windows: number | null;
+  avg_runtime_ms: number | null;
+  /** Last 20 logical runs, oldest first. */
+  recent_results: SparkResult[];
+}
+
+export interface Sample {
+  id: number;
+  sha: string;
+  extension: string;
+  original_name: string;
+  tags: string[];
+  test_count: number;
+}
+
+/** Raw run row from GET /api/v1/runs. */
+export interface LiveRun {
+  run_id: number;
+  status: RunStatus;
+  platform: Platform;
+  test_type: "pr" | "commit";
+  repository: string;
+  branch: string;
+  commit_sha: string;
+  pr_number: number | null;
+  created_at: string | null;
+  queued_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  github_link: string | null;
+}
+
+/** GET /api/v1/runs/<id>/summary */
+export interface RunSummary {
+  run_id: number;
+  status: RunStatus;
+  total_samples: number;
+  pass_count: number;
+  fail_count: number;
+  error_count: number;
+  missing_output_count: number;
+  skipped_count: number;
+  duration_ms: number | null;
+}
+
+export interface LogicalPlatformRun {
+  run_id: number;
+  platform: Platform;
+  status: RunStatus;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+/** Logical run = all platforms for one commit/PR event (grouped client-side). */
+export interface LogicalRun {
+  id: string;
+  commit: string;
+  branch: string;
+  fork: string;
+  pr_nr: number | null;
+  test_type: "pr" | "commit";
+  created_at: string | null;
+  github_link: string | null;
+  platforms: LogicalPlatformRun[];
+}
+
+/** Snapshot run shape (mocks/generated/runs.json, from prod dump). */
+export interface SnapshotPlatformRun {
+  test_id: number;
+  platform: Platform;
+  status: string;
+  message: string;
+  passed: number;
+  failed: number;
+  new_failures: number;
+  total: number;
+  duration_s: number | null;
+  started_at: string | null;
+  failing_ids: number[];
+}
+
+export interface SnapshotRun {
+  id: string;
+  commit: string;
+  branch: string;
+  fork: string;
+  pr_nr: number | null;
+  test_type: "pr" | "commit";
+  created_at: string | null;
+  platforms: SnapshotPlatformRun[];
+}
+
+export interface DryRunOutput {
+  filename: string;
+  hash: string;
+  size_bytes: number;
+  preview: string[];
+  runtime_ms: number;
+  exit_code: number;
+}
+
+export interface DryRunState {
+  platform: Platform;
+  status: RunStatus;
+  progress_pct: number;
+  message: string;
+  outputs: DryRunOutput[];
+}
