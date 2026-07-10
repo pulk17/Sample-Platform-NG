@@ -52,8 +52,7 @@ export function DiffDrawer({
             {isError && (
               <div className="rounded-lg border border-warning/40 bg-warning/8 p-3 text-xs text-warning">
                 {error instanceof Error ? error.message : "Could not load diff"} — the
-                output file for this hash isn't present in this environment's storage
-                (expected locally; production serves it from the sample repository).
+                output file for this result isn't present in storage.
               </div>
             )}
             {data && (

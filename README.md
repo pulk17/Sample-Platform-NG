@@ -1,39 +1,49 @@
-# Sample Platform — Web Console (prototype)
+# Sample Platform NG
 
-Workflow-first frontend prototype for the CCExtractor Sample Platform
-modernization (see `MODERNIZATION_PLAN.md` in the sample-platform repo).
+A modern web console for the [CCExtractor Sample Platform](https://github.com/CCExtractor/sample-platform):
+regression-test triage, run results with caption diffs, suite management,
+sample library and platform administration — one SPA talking to the
+platform's REST API.
 
-Runs entirely on **real production data** — fixtures under
-`src/mocks/generated/` were extracted from the June 2026 prod DB dump
-(237 regression tests, 178 samples, 15 categories, 30 recent runs) by
-`extract_fixtures.py`. The data layer (`src/lib/api.ts`) is a seam: each
-accessor swaps to a generated OpenAPI client once the `mod_api` write
-endpoints land.
+## Pages
 
-## Surfaces
+| Route | What it does |
+|---|---|
+| `/` | Triage inbox — recent runs that finished with failures, grouped by category, with per-test diff and baseline promotion |
+| `/runs` | Test results — Linux/Windows grouped per commit, live counts, links to per-run pages |
+| `/runs/:id` | One run — metadata, progress stepper, results by category, diffs on failing tests |
+| `/runs/new` | Queue a run against any fork/commit, full suite or a category subset |
+| `/tests` | Regression tests — category rail, filterable list, editable detail panel with per-platform history |
+| `/tests/new` | Guided test creation: sample → command → dry run → bless output |
+| `/samples` | Sample library with extension facets; drawer shows upload details, media info and cross-run history |
+| `/upload` | Client-side SHA-256 duplicate check before any transfer |
+| `/admin` | Users & roles, CI queue, API tokens |
 
-- **Triage** (`/`) — the landing page is an inbox, not a stats dashboard:
-  new failures per run × platform × category, expandable, with accept/dismiss
-  actions (W2/W3 in the plan).
-- **Runs** (`/runs`) — timeline of logical runs (Linux+Windows paired),
-  inline failure breakdown with real infra-error messages.
-- **Test Studio** (`/tests`) — IDE-style 3-pane workspace: category rail with
-  live health → test list → always-editable detail panel. Deep-linkable via
-  `?t=<id>`. No CRUD pages, no modals.
-- **Test Builder** (`/tests/new`) — the anti-SQL wizard: pick sample →
-  compose command (presets mined from the real suite) → dry-run on CI →
-  bless output as baseline → categorize.
-- **Samples** (`/samples`) — searchable gallery with extension facets.
+## Running it
 
-## Stack
-
-Vite · React 19 · TypeScript · Tailwind 4 · TanStack Router · motion ·
-Radix primitives. Design language modeled on Linear (light-first,
-near-monochrome + indigo accent, status dots, spring animations).
-
-## Dev
+**Against the API** (a sample-platform instance with `mod_api`):
 
 ```
 npm install
-npm run dev   # http://localhost:5173
+npm run dev        # http://localhost:5173, proxies /api to :5001
 ```
+
+Sign in with a platform account; the app mints a scoped API token and picks
+up your role from `/auth/me`. Editing and administration need
+admin/contributor — everyone else gets read-only views.
+
+**Standalone demo** (no backend — data bundled from a production snapshot):
+
+```
+npm run build:demo # static dist/, any credentials sign in
+```
+
+`vercel.json` / `netlify.toml` deploy the demo as-is;
+`deploy/nginx.example.conf` shows the production layout (static app +
+proxied API).
+
+## Stack
+
+Vite, React 19, TypeScript, Tailwind 4, TanStack Router + Query, motion,
+Radix primitives. Data access lives in `src/lib/api.ts`; the demo intercepts
+those calls in `src/lib/demo.ts`.

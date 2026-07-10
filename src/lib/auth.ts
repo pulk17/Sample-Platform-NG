@@ -1,6 +1,6 @@
-// Token auth against POST /api/v1/auth/tokens (Bearer spci_*).
-// Role is inferred client-side for UI gating only — the server enforces real
-// permissions on every call. GET /auth/me (plan task B-1a) replaces this.
+// Session handling. Login mints a bearer token via POST /auth/tokens, then
+// asks /auth/me for the server-side role. The role only gates what the UI
+// shows — every mutation is re-checked on the server.
 
 export type Role = "user" | "contributor" | "admin";
 
@@ -56,7 +56,7 @@ export async function login(email: string, password: string): Promise<Session> {
   }
   const body = await res.json();
 
-  // Real role from GET /auth/me — server-resolved, no client guessing.
+  // Fetch the role the server actually assigned to this account.
   const meRes = await fetch("/api/v1/auth/me", {
     headers: { Authorization: `Bearer ${body.token}` },
   });

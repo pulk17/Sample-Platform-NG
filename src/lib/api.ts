@@ -1,6 +1,6 @@
-// Data layer: live mod_api calls (Bearer token) merged with snapshot
-// analytics (sparklines, baselines, failure sets) extracted from the prod
-// dump. Snapshot fills the gaps the API does not serve yet (plan B-2d, B-4b).
+// Data layer. Live API calls where endpoints exist; a bundled snapshot of
+// the production database covers what the API doesn't serve yet (per-test
+// baselines, run history sparklines, failure groupings).
 
 import { useQuery } from "@tanstack/react-query";
 
@@ -402,9 +402,9 @@ export function useSampleHistory(sampleId: number | null) {
     enabled: sampleId !== null,
     staleTime: 300_000,
     queryFn: async () => {
-      // created_after keeps the query bounded — without it the endpoint
-      // materializes every historical run before paginating (API perf gap,
-      // plan M-6). 90 days covers the triage-relevant window.
+      // Keep the query date-bounded: without created_after the endpoint
+      // loads every historical run before paginating, which takes ~10s on
+      // a long-lived sample. 45 days covers anything worth triaging.
       const since = new Date(Date.now() - 45 * 86_400_000).toISOString().slice(0, 10);
       const res = await apiGet<Envelope<HistoryEntry>>(
         `/samples/${sampleId}/history?limit=20&created_after=${since}`,
@@ -415,9 +415,9 @@ export function useSampleHistory(sampleId: number | null) {
 }
 
 /**
- * Promote a run's actual output to the expected baseline. DESTRUCTIVE:
- * replaces the stored baseline hash globally. Admin role + baselines:write
- * scope enforced server-side.
+ * Promote a run's actual output to the expected baseline. This replaces the
+ * stored hash for every future run, so the UI must confirm before calling.
+ * The server enforces admin role + baselines:write.
  */
 export async function approveBaseline(args: {
   runId: number;
@@ -565,10 +565,7 @@ export interface TriageGroup {
   tests: RegressionTest[];
 }
 
-/**
- * Triage inbox groups (run × platform × category of NEW failures). Snapshot
- * data — the live equivalent is plan task B-4b (`/runs/<id>/failure-groups`).
- */
+/** Failure groups (run × platform × category) computed from the snapshot. */
 export function triageGroups(maxRuns = 3): TriageGroup[] {
   const out: TriageGroup[] = [];
   for (const run of snapshotRuns.slice(0, maxRuns)) {

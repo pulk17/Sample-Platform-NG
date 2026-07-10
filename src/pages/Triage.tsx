@@ -21,11 +21,12 @@ import type { LogicalRun } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
- * Home = triage inbox, fully live: latest runs with failures, each platform's
- * failing tests fetched from GET /runs/<id>/samples?status=fail.
+ * Home: an inbox of recent runs that finished with failures. Each card pulls
+ * that run's failing tests and groups them by category.
  *
- * Baseline promotion is deliberately buried: per-row overflow menu → warning
- * dialog → admin-only server enforcement. No bulk action exists on purpose.
+ * Baseline promotion hides behind a per-row overflow menu and a warning
+ * dialog. There is intentionally no bulk accept — replacing baselines should
+ * take one deliberate click per test.
  */
 export function Triage() {
   const { data: runs = [], isLoading } = useRuns();
@@ -299,10 +300,8 @@ function FailureRow({ f, runId }: { f: RunFailure; runId: number }) {
         body={
           <>
             The output this run produced becomes the expected baseline{" "}
-            <b>for every future run, on all platforms</b>. The current baseline hash is
-            discarded. This is the same operation as the old SQL{" "}
-            <code>UPDATE regression_test_output</code> — but audited and reversible only
-            by promoting another output.
+            <b>for every future run, on all platforms</b>. The current baseline hash
+            is discarded, and the only way back is promoting another output.
           </>
         }
         confirmLabel={busy ? "Promoting…" : "Replace baseline"}

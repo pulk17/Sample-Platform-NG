@@ -92,8 +92,7 @@ export function TestBuilder() {
         </h1>
         <p className="max-w-md text-[13px] text-faint">
           It stays inactive until its output is verified on a real run and a
-          baseline is recorded — then activate it from Regression tests. No SQL
-          involved.
+          baseline is recorded — then activate it from Regression tests.
         </p>
         <div className="flex gap-2">
           <Button onClick={() => navigate({ to: "/tests", search: { t: saved } })}>

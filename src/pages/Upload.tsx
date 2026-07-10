@@ -14,11 +14,11 @@ interface Picked {
 }
 
 /**
- * "Sample upload". The browser hashes the file (SHA-256, streamed) and checks
- * it against the live sample library BEFORE any bytes leave the machine —
- * the old site only detected duplicates after a full FTP/HTTP transfer.
- * The actual upload endpoint is plan task B-3e; submission is disabled until
- * it lands.
+ * Sample upload. Files are hashed in the browser and checked against the
+ * library before any bytes are transferred, so duplicates get caught up
+ * front instead of after a multi-gigabyte upload. The transfer itself still
+ * goes through the existing FTP/HTTP pipeline until the API grows an upload
+ * endpoint, so the submit button stays disabled.
  */
 export function Upload() {
   const { data: samples = [] } = useSamples();
@@ -124,10 +124,10 @@ export function Upload() {
         {items.some((it) => it.sha && !it.duplicateOf) && (
           <div className="mt-4 flex items-center justify-between rounded-xl border border-dashed bg-muted/30 p-4">
             <span className="text-[12px] text-faint">
-              Resumable upload endpoint ships with plan task B-3e — until then the FTP/HTTP
-              flow on the classic site remains the transfer path.
+              Direct upload isn't available yet — transfer new samples through the
+              existing FTP/HTTP flow for now.
             </span>
-            <Button disabled title="Waiting on the upload API (B-3e)">
+            <Button disabled title="Upload API not available yet">
               Upload
             </Button>
           </div>

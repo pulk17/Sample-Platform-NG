@@ -1,6 +1,6 @@
-// Shapes match src/mocks/generated/*.json, extracted from the production DB
-// dump (2026-06 snapshot). When the real API lands these become the generated
-// OpenAPI types; field names already mirror mod_api schema conventions.
+// Domain types. Field names follow the API's serializers so responses can
+// be used mostly as-is; the snapshot JSON under src/mocks/generated uses
+// the same shapes.
 
 export type Platform = "linux" | "windows";
 

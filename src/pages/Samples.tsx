@@ -150,7 +150,7 @@ export function Samples() {
 }
 
 /**
- * Full sample-info page (parity with old prod /sample/<id>): basic details,
+ * Full sample-info drawer: basic details,
  * upload metadata, tags, per-platform test status, tests, media-info tree,
  * and cross-run result history. Everything live.
  */

@@ -30,9 +30,8 @@ const STAGE_LABEL: Record<string, string> = {
 };
 
 /**
- * Dedicated per-run page (one platform run) — parity with the old SP
- * /test/<id>: metadata, progress stepper, and results grouped by category
- * with expandable diffs.
+ * One platform run: metadata, progress stepper, and results grouped by
+ * category. Failing tests open their diff in a drawer.
  */
 export function RunDetail() {
   const { runId } = useParams({ from: "/runs/$runId" });

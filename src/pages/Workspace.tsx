@@ -23,10 +23,9 @@ import type { RegressionTest } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
- * "Regression tests" (classic-site name): category rail → list → detail.
- * Live list from GET /api/v1/regression-tests; sparklines/baselines from the
- * prod snapshot until the detail endpoint (plan B-2d) exists.
- * Editing is admin/contributor-only; everyone else gets a read-only view.
+ * Regression tests: category rail → test list → detail panel. The list is
+ * live; baseline hashes come from the bundled snapshot since the API has no
+ * per-test detail endpoint yet. Editing needs admin or contributor.
  */
 export function Workspace() {
   const { data: tests = [], isLoading } = useRegressionTests();

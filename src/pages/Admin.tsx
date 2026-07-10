@@ -19,15 +19,15 @@ import {
   type PlatformUser,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth";
+import { DEMO } from "@/lib/demo";
 import { cn } from "@/lib/utils";
 import type { RunStatus } from "@/lib/types";
 
 const ROLES: PlatformUser["role"][] = ["admin", "contributor", "tester", "user"];
 
 /**
- * "Administration": the only place suite/platform mutations live.
- * Token manager and CI queue are fully live; the rest lists the write-API
- * tasks (plan B-1c/B-2/B-6) that unlock each section.
+ * Administration. Platform mutations live here and nowhere else — browse
+ * pages stay read-only so a stray click can't change the suite.
  */
 export function Admin() {
   return (
@@ -57,12 +57,27 @@ export function Admin() {
         </section>
 
         <UserSection />
-        <MaintenanceSection />
-        <BlockedUsersSection />
-        <ForbiddenSection />
-        <CategorySection />
+        {/* These four have no write endpoints yet, so outside the demo they
+            would silently drop changes. Hide them rather than lie. */}
+        {DEMO && (
+          <>
+            <MaintenanceSection />
+            <BlockedUsersSection />
+            <ForbiddenSection />
+            <CategorySection />
+          </>
+        )}
         <QueueSection />
         <TokenSection />
+        {!DEMO && (
+          <section>
+            <SectionLabel>Coming next</SectionLabel>
+            <div className="rounded-xl border border-dashed p-4 text-[12px] text-faint">
+              Maintenance mode, blocked CI users, forbidden upload extensions and
+              category management are waiting on their API endpoints.
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

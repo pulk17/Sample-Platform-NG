@@ -11,7 +11,7 @@ import { useRunFailures, useRuns, useRunSummary } from "@/lib/api";
 import type { LogicalPlatformRun, LogicalRun } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/** "Test results" (classic-site name). Live from GET /api/v1/runs. */
+/** CI runs, newest first, with Linux and Windows grouped per commit. */
 export function Runs() {
   const { data: runs = [], isLoading } = useRuns();
   const [open, setOpen] = useState<string | null>(null);
