@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Login } from "@/components/Login";
 import { getSession, logout } from "@/lib/auth";
+import { DEMO } from "@/lib/demo";
 import { cn } from "@/lib/utils";
 
 /* Classic-site menu names so migrating devs feel at home. */
@@ -177,10 +178,16 @@ export function AppShell() {
         </div>
       </motion.aside>
 
-      <main className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-card">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-card">
+        {DEMO && (
+          <div className="shrink-0 border-b border-warning/30 bg-warning/10 px-4 py-1 text-center text-[11px] font-medium text-warning">
+            Demo — every account is fake, every change stays in this tab. Nothing here touches
+            the real platform.
+          </div>
+        )}
         <motion.div
           key={pathname}
-          className="h-full overflow-y-auto"
+          className="min-h-0 flex-1 overflow-y-auto"
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}

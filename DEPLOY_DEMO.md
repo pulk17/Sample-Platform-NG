@@ -4,6 +4,12 @@ The demo is a **static site with no backend** — all data is baked in and the
 app intercepts its own API calls (`src/lib/demo.ts`). It runs anywhere that
 serves static files. Uses hash routing, so no server-side rewrites are needed.
 
+> **Demo builds are for showcasing only.** Any credentials sign in as admin
+> and a banner says so in the UI. Never use a demo build as the starting
+> point for a production deploy — production is a plain `npm run build`
+> served behind Nginx next to the real API (`deploy/nginx.example.conf`),
+> and the committed `netlify.toml` / `vercel.json` are demo configs.
+
 Build it:
 
 ```bash

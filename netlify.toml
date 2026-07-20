@@ -1,4 +1,8 @@
-# Netlify config for the static demo.
+# Netlify config for the STATIC DEMO ONLY — the demo build fakes the whole
+# API in the browser and gives an admin-role view to anyone. Never point a
+# real API origin at this; production deploys are `npm run build` behind
+# Nginx (deploy/nginx.example.conf).
+#
 # The app uses hash routing in demo mode, so no SPA redirect is required,
 # but this keeps direct hits on any path working too.
 [build]
@@ -9,3 +13,14 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # style-src 'unsafe-inline' is needed by the animation library; there
+    # are no third-party scripts, fonts are self-hosted, and connect stays
+    # on our own origin.
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
