@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createRun, deriveCategories, useRegressionTests } from "@/lib/api";
+import { isBranchName, isCommitSha, isRepoSlug } from "@/lib/validate";
 import type { Platform } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -25,8 +26,9 @@ export function RunNew() {
   const [error, setError] = useState<string | null>(null);
 
   const categories = deriveCategories(tests);
-  const commitOk = /^[a-fA-F0-9]{40}$/.test(commit);
-  const repoOk = /^[\w.-]+\/[\w.-]+$/.test(repository);
+  const commitOk = isCommitSha(commit);
+  const repoOk = isRepoSlug(repository);
+  const branchOk = isBranchName(branch);
 
   const selectedIds = useMemo(() => {
     if (cats.length === 0) return undefined; // full suite
@@ -97,7 +99,11 @@ export function RunNew() {
           </div>
           <div>
             <Label>Branch</Label>
-            <Input value={branch} onChange={(e) => setBranch(e.target.value)} />
+            <Input
+              value={branch}
+              onChange={(e) => setBranch(e.target.value.trim())}
+              className={cn(!branchOk && branch && "border-destructive/50")}
+            />
           </div>
         </div>
 
@@ -171,7 +177,7 @@ export function RunNew() {
           <div className="flex items-center gap-2">
             {error && <span className="text-[11px] text-destructive">{error}</span>}
             <Button
-              disabled={!commitOk || !repoOk || platforms.length === 0 || busy}
+              disabled={!commitOk || !repoOk || !branchOk || platforms.length === 0 || busy}
               onClick={submit}
             >
               {busy ? <Loader2 className="animate-spin" /> : <Play />} Queue run

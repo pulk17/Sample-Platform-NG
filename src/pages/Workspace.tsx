@@ -19,6 +19,7 @@ import {
 import type { Platform, SparkResult } from "@/lib/types";
 import { useResizableWidth } from "@/components/ResizeHandle";
 import { canManage, getSession } from "@/lib/auth";
+import { COMMAND_MAX } from "@/lib/validate";
 import type { RegressionTest } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -342,9 +343,15 @@ function Detail({ test }: { test: RegressionTest }) {
               className="rounded-none border-0 font-mono text-xs shadow-none focus-visible:ring-0"
               value={command}
               readOnly={!editable}
+              maxLength={COMMAND_MAX}
               onChange={(e) => setCommand(e.target.value)}
             />
           </div>
+          {editable && (
+            <div className="mt-1 text-[11px] text-warning">
+              This command runs verbatim on the CI VMs for every future run.
+            </div>
+          )}
           <div className="mt-1.5 flex gap-4 text-[11px] text-faint">
             <span>expected RC <b className="text-muted-foreground">{test.expected_rc}</b></span>
             {test.avg_runtime_ms != null && (

@@ -2,7 +2,7 @@
 // asks /auth/me for the server-side role. The role only gates what the UI
 // shows — every mutation is re-checked on the server.
 
-export type Role = "user" | "contributor" | "admin";
+export type Role = "user" | "tester" | "contributor" | "admin";
 
 export interface Session {
   token: string;
@@ -12,6 +12,13 @@ export interface Session {
 }
 
 const KEY = "sp-session";
+
+// Every role needs runs:write (fork runs are open to any signed-in user);
+// the write scopes that actually matter — baseline replacement and token
+// administration — are only minted once /auth/me confirms a role that can
+// use them. Keeps the stored token boring for everyone else.
+const BASE_SCOPES = ["runs:read", "runs:write", "results:read", "system:read"];
+const ELEVATED_SCOPES = [...BASE_SCOPES, "baselines:write", "tokens:manage"];
 
 export function getSession(): Session | null {
   try {
@@ -32,47 +39,90 @@ export function canManage(s: Session | null): boolean {
   return s?.role === "admin" || s?.role === "contributor";
 }
 
-export async function login(email: string, password: string): Promise<Session> {
+/** Roles allowed to queue/cancel CI runs (mirrors the API's require_roles). */
+export function canOperateCi(s: Session | null): boolean {
+  return s?.role === "admin" || s?.role === "contributor" || s?.role === "tester";
+}
+
+interface TokenResponse {
+  token: string;
+  expires_at: string;
+}
+
+async function mintToken(email: string, password: string, scopes: string[]): Promise<TokenResponse> {
   const res = await fetch("/api/v1/auth/tokens", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       email,
       password,
-      token_name: `web-console-${Date.now() % 100000}`,
-      scopes: [
-        "runs:read",
-        "runs:write",
-        "system:read",
-        "baselines:write",
-        "results:read",
-        "tokens:manage",
-      ],
+      token_name: `web-console-${crypto.randomUUID().slice(0, 8)}`,
+      scopes,
     }),
   });
   if (!res.ok) {
+    // Deliberately vague on auth failures — precise reasons enable account
+    // enumeration. The server's message still lands in the console.
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message ?? `Login failed (${res.status})`);
+    console.warn("login failed:", res.status, body.message ?? res.statusText);
+    throw new Error(
+      res.status === 401 || res.status === 403
+        ? "Email or password is incorrect."
+        : "Sign-in failed — try again in a moment.",
+    );
   }
-  const body = await res.json();
+  return res.json();
+}
+
+async function revokeOnServer(token: string): Promise<void> {
+  try {
+    await fetch("/api/v1/auth/tokens/current", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // Offline or server down — the token still dies at its server-side expiry.
+  }
+}
+
+export async function login(email: string, password: string): Promise<Session> {
+  let minted = await mintToken(email, password, BASE_SCOPES);
 
   // Fetch the role the server actually assigned to this account.
   const meRes = await fetch("/api/v1/auth/me", {
-    headers: { Authorization: `Bearer ${body.token}` },
+    headers: { Authorization: `Bearer ${minted.token}` },
   });
   const me = meRes.ok ? await meRes.json() : { role: "user" };
+  const role = (me.role as Role) ?? "user";
+
+  if (role === "admin" || role === "contributor") {
+    // Swap the probe token for a write-capable one; the probe is revoked so
+    // it doesn't linger in the token list.
+    const probe = minted.token;
+    minted = await mintToken(email, password, ELEVATED_SCOPES);
+    void revokeOnServer(probe);
+  }
 
   const session: Session = {
-    token: body.token,
+    token: minted.token,
     email,
-    role: (me.role as Role) ?? "user",
-    expires_at: body.expires_at,
+    role,
+    expires_at: minted.expires_at,
   };
   localStorage.setItem(KEY, JSON.stringify(session));
   return session;
 }
 
+let loggingOut = false;
+
 export function logout() {
+  // Parallel queries all hit 401 at once when a token dies — only the first
+  // caller gets to tear the session down and reload.
+  if (loggingOut) return;
+  loggingOut = true;
+  const s = getSession();
   localStorage.removeItem(KEY);
-  window.location.reload();
+  const done = () => window.location.reload();
+  if (s) void revokeOnServer(s.token).finally(done);
+  else done();
 }

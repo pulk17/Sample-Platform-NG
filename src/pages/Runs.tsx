@@ -8,6 +8,7 @@ import { RunStatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useRunFailures, useRuns, useRunSummary } from "@/lib/api";
+import { githubUrl } from "@/lib/validate";
 import type { LogicalPlatformRun, LogicalRun } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -120,6 +121,7 @@ export function Runs() {
 }
 
 function RunDetail({ run }: { run: LogicalRun }) {
+  const gh = githubUrl(run.github_link);
   return (
     <div className="border-t">
       <div className="grid grid-cols-2 gap-px bg-border">
@@ -127,10 +129,10 @@ function RunDetail({ run }: { run: LogicalRun }) {
           <PlatformDetail key={p.platform} p={p} />
         ))}
       </div>
-      {run.github_link && (
+      {gh && (
         <div className="border-t bg-muted/30 px-4 py-2">
           <a
-            href={run.github_link}
+            href={gh}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"

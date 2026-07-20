@@ -19,6 +19,7 @@ import {
   useRunSamples,
   type RunFailure,
 } from "@/lib/api";
+import { githubUrl } from "@/lib/validate";
 import { cn } from "@/lib/utils";
 
 const STAGES = ["preparation", "testing", "completed"] as const;
@@ -39,6 +40,7 @@ export function RunDetail() {
   const { data: run } = useRun(id);
   const { data: progress = [] } = useRunProgress(id);
   const { data: samples = [], isLoading } = useRunSamples(id);
+  const gh = githubUrl(run?.github_link);
 
   // Reached-stage set for the stepper.
   const reached = new Set(progress.map((p) => p.status));
@@ -69,8 +71,8 @@ export function RunDetail() {
           </Link>
           <h1 className="text-[15px] font-semibold tracking-tight">Run {id}</h1>
           {run && <RunStatusBadge status={run.status} />}
-          {run?.github_link && (
-            <a href={run.github_link} target="_blank" rel="noreferrer" className="ml-auto">
+          {gh && (
+            <a href={gh} target="_blank" rel="noreferrer" className="ml-auto">
               <Button size="sm" variant="secondary">
                 <ExternalLink /> View on GitHub
               </Button>
@@ -87,9 +89,13 @@ export function RunDetail() {
               {run.pr_number ? (
                 <span className="inline-flex items-center gap-1.5">
                   <GitPullRequest className="size-3.5 text-primary" />
-                  <a href={run.github_link ?? "#"} target="_blank" rel="noreferrer" className="text-primary hover:underline">
-                    #{run.pr_number}
-                  </a>
+                  {gh ? (
+                    <a href={gh} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                      #{run.pr_number}
+                    </a>
+                  ) : (
+                    <span className="text-primary">#{run.pr_number}</span>
+                  )}
                   <span className="text-faint">(commit {run.commit_sha.slice(0, 7)})</span>
                 </span>
               ) : (

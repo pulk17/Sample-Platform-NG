@@ -43,6 +43,21 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Turn an API failure into copy safe to render. 4xx validation messages are
+ * written for end users and pass through; auth failures and server errors
+ * get generic copy so backend internals never reach the screen. The raw
+ * message goes to the console either way.
+ */
+function apiError(status: number, raw: string): ApiError {
+  console.warn(`API ${status}:`, raw);
+  if (status === 401) return new ApiError(status, "Session expired — sign in again.");
+  if (status === 403) return new ApiError(status, "You don't have permission to do that.");
+  if (status === 429) return new ApiError(status, "Rate limited — give it a minute.");
+  if (status >= 500) return new ApiError(status, "The platform hit an internal error. Try again shortly.");
+  return new ApiError(status, raw || "Request failed.");
+}
+
 async function apiGet<T>(path: string): Promise<T> {
   const session = getSession();
   const res = await fetch(`${BASE}${path}`, {
@@ -50,12 +65,13 @@ async function apiGet<T>(path: string): Promise<T> {
   });
   if (res.status === 401 && session) {
     // Token expired/revoked server-side — drop the stale session and land
-    // back on the login screen instead of erroring every query.
+    // back on the login screen instead of erroring every query. logout()
+    // guards itself against the parallel-query stampede.
     logout();
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.message ?? res.statusText);
+    throw apiError(res.status, body.message ?? res.statusText);
   }
   return res.json() as Promise<T>;
 }
@@ -72,7 +88,7 @@ async function apiSend<T>(method: string, path: string, body: unknown): Promise<
   });
   if (res.status === 401 && session) logout();
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, data.message ?? res.statusText);
+  if (!res.ok) throw apiError(res.status, data.message ?? res.statusText);
   return data as T;
 }
 
@@ -312,7 +328,7 @@ export function useQueue() {
       const res = await fetch(`${BASE}/system/queue`, {
         headers: session ? { Authorization: `Bearer ${session.token}` } : {},
       });
-      if (!res.ok) throw new ApiError(res.status, res.statusText);
+      if (!res.ok) throw apiError(res.status, res.statusText);
       const body = (await res.json()) as {
         data: QueueEntry[];
         meta: { queue_depth: number; running_count: number };
@@ -350,7 +366,7 @@ export async function revokeToken(id: number): Promise<void> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.message ?? res.statusText);
+    throw apiError(res.status, body.message ?? res.statusText);
   }
 }
 

@@ -17,6 +17,7 @@ import {
   type RunFailure,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth";
+import { githubUrl } from "@/lib/validate";
 import type { LogicalRun } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -108,6 +109,7 @@ function FailureCard({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const { data: failures = [], isLoading } = useRunFailures(open ? runId : null);
+  const gh = githubUrl(run.github_link);
 
   // Group by first category, biggest group first.
   const groups = useMemo(() => {
@@ -192,8 +194,8 @@ function FailureCard({
                   </div>
                 ))}
                 <div className="flex items-center gap-2 bg-card px-4 py-2.5">
-                  {run.github_link && (
-                    <a href={run.github_link} target="_blank" rel="noreferrer">
+                  {gh && (
+                    <a href={gh} target="_blank" rel="noreferrer">
                       <Button size="sm" variant="ghost">
                         <ExternalLink /> Open on GitHub
                       </Button>
