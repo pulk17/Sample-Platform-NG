@@ -5,7 +5,7 @@
 export type Platform = "linux" | "windows";
 
 /** Normalized run statuses from mod_api services/status.py, plus the VM
- * progress phases used by the dry-run stepper. */
+ * progress phases reported while a run executes. */
 export type RunStatus =
   | "queued"
   | "running"
@@ -143,19 +143,3 @@ export interface SnapshotRun {
   platforms: SnapshotPlatformRun[];
 }
 
-export interface DryRunOutput {
-  filename: string;
-  hash: string;
-  size_bytes: number;
-  preview: string[];
-  runtime_ms: number;
-  exit_code: number;
-}
-
-export interface DryRunState {
-  platform: Platform;
-  status: RunStatus;
-  progress_pct: number;
-  message: string;
-  outputs: DryRunOutput[];
-}

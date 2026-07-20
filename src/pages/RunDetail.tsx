@@ -1,11 +1,16 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import {
+  AlertTriangle,
+  Ban,
   Check,
   ChevronDown,
   ChevronLeft,
+  Download,
   ExternalLink,
   GitCommitHorizontal,
   GitPullRequest,
+  Loader2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useState } from "react";
@@ -13,12 +18,17 @@ import { useMemo, useState } from "react";
 import { DiffDrawer, type DiffTarget } from "@/components/DiffDrawer";
 import { RunStatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm";
 import {
+  cancelRun,
+  useInfraErrors,
   useRun,
+  useRunArtifacts,
   useRunProgress,
   useRunSamples,
   type RunFailure,
 } from "@/lib/api";
+import { canOperateCi, getSession } from "@/lib/auth";
 import { githubUrl } from "@/lib/validate";
 import { cn } from "@/lib/utils";
 
@@ -40,11 +50,33 @@ export function RunDetail() {
   const { data: run } = useRun(id);
   const { data: progress = [] } = useRunProgress(id);
   const { data: samples = [], isLoading } = useRunSamples(id);
+  const { data: infraErrors = [] } = useInfraErrors(id);
   const gh = githubUrl(run?.github_link);
+  const qc = useQueryClient();
 
   // Reached-stage set for the stepper.
   const reached = new Set(progress.map((p) => p.status));
   const canceled = reached.has("canceled");
+
+  const finished =
+    !run || ["pass", "fail", "canceled", "error"].includes(run.status);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [canceling, setCanceling] = useState(false);
+
+  const doCancel = async () => {
+    setCanceling(true);
+    try {
+      await cancelRun(id);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["run", id] }),
+        qc.invalidateQueries({ queryKey: ["run-progress", id] }),
+        qc.invalidateQueries({ queryKey: ["runs"] }),
+      ]);
+    } finally {
+      setCanceling(false);
+      setConfirmCancel(false);
+    }
+  };
 
   // Group results by category; a category "fails" if any test in it fails.
   const categories = useMemo(() => {
@@ -71,17 +103,56 @@ export function RunDetail() {
           </Link>
           <h1 className="text-[15px] font-semibold tracking-tight">Run {id}</h1>
           {run && <RunStatusBadge status={run.status} />}
-          {gh && (
-            <a href={gh} target="_blank" rel="noreferrer" className="ml-auto">
-              <Button size="sm" variant="secondary">
-                <ExternalLink /> View on GitHub
+          <div className="ml-auto flex items-center gap-2">
+            {!finished && canOperateCi(getSession()) && (
+              <Button size="sm" variant="outline" onClick={() => setConfirmCancel(true)}>
+                <Ban /> Cancel run
               </Button>
-            </a>
-          )}
+            )}
+            {gh && (
+              <a href={gh} target="_blank" rel="noreferrer">
+                <Button size="sm" variant="secondary">
+                  <ExternalLink /> View on GitHub
+                </Button>
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
+      <ConfirmDialog
+        open={confirmCancel}
+        onOpenChange={setConfirmCancel}
+        title={`Cancel run ${id}?`}
+        body="The VM stops as soon as it notices, and results collected so far are kept. This can't be resumed — a new run has to be queued."
+        confirmLabel={canceling ? "Canceling…" : "Cancel run"}
+        busy={canceling}
+        onConfirm={doCancel}
+      />
+
       <div className="mx-auto max-w-4xl px-6 py-5">
+        {infraErrors.length > 0 && (
+          <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/8 p-3.5">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+            <div className="text-[13px]">
+              <div className="font-medium text-warning">
+                Infrastructure problem — failures here may not be caused by the code
+              </div>
+              <ul className="mt-1 text-[12px] text-muted-foreground">
+                {infraErrors.slice(0, 3).map((e, i) => (
+                  <li key={i}>
+                    <span className="uppercase text-[10px] tracking-wider text-faint">{e.type}</span>{" "}
+                    {e.message}
+                  </li>
+                ))}
+                {infraErrors.length > 3 && (
+                  <li className="text-faint">+ {infraErrors.length - 3} more</li>
+                )}
+              </ul>
+            </div>
+          </div>
+        )}
+
         {/* Metadata */}
         {run && (
           <div className="mb-6 overflow-hidden rounded-xl border shadow-card">
@@ -148,6 +219,8 @@ export function RunDetail() {
             })}
           </div>
         </div>
+
+        {finished && <ArtifactsSection runId={id} />}
 
         {/* Results by category */}
         <h2 className="mb-1 text-[15px] font-semibold tracking-tight">Test results</h2>
@@ -263,6 +336,69 @@ function CategoryBlock({
       </AnimatePresence>
 
       <DiffDrawer target={diff} onClose={() => setDiff(null)} />
+    </div>
+  );
+}
+
+/** Build log and output files of a finished run, with download links where
+ * storage still has the file (GCS-backed runs get signed URLs). */
+function ArtifactsSection({ runId }: { runId: number }) {
+  const { data: artifacts = [], isLoading } = useRunArtifacts(runId);
+  const [showAll, setShowAll] = useState(false);
+
+  if (!isLoading && artifacts.length === 0) return null;
+  const visible = showAll ? artifacts : artifacts.slice(0, 8);
+
+  return (
+    <div className="mb-8">
+      <h2 className="mb-1 text-[15px] font-semibold tracking-tight">Artifacts</h2>
+      <p className="mb-3 text-[13px] text-faint">
+        Files this run produced — build log and expected/actual outputs.
+      </p>
+      {isLoading && (
+        <div className="flex items-center gap-2 text-xs text-faint">
+          <Loader2 className="size-3 animate-spin" /> loading artifact list
+        </div>
+      )}
+      <div className="overflow-hidden rounded-xl border shadow-card">
+        {visible.map((a) => (
+          <div
+            key={a.artifact_id}
+            className="flex items-center gap-3 border-b bg-card px-3.5 py-2 text-[12px] last:border-0"
+          >
+            <span className="w-28 shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {a.type.replace(/_/g, " ")}
+            </span>
+            <code className="min-w-0 flex-1 truncate">{a.filename}</code>
+            {a.size_bytes != null && (
+              <span className="shrink-0 tabular-nums text-faint">
+                {(a.size_bytes / 1024).toFixed(0)} KB
+              </span>
+            )}
+            {a.download_url ? (
+              <a
+                href={a.download_url}
+                download={a.filename}
+                className="flex shrink-0 items-center gap-1 font-medium text-primary hover:underline"
+              >
+                <Download className="size-3" /> download
+              </a>
+            ) : (
+              <span className="shrink-0 text-[11px] text-faint">
+                {a.storage_status === "ok" ? "on server" : a.storage_status}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      {artifacts.length > 8 && (
+        <button
+          onClick={() => setShowAll(!showAll)}
+          className="mt-1.5 cursor-pointer text-[11px] text-faint hover:text-foreground"
+        >
+          {showAll ? "show fewer" : `show all ${artifacts.length}`}
+        </button>
+      )}
     </div>
   );
 }

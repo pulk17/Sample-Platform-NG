@@ -23,6 +23,7 @@ export function Samples() {
   const [q, setQ] = useState("");
   const [ext, setExt] = useState<string | null>(null);
   const [selected, setSelected] = useState<Sample | null>(null);
+  const [limit, setLimit] = useState(60);
 
   const extensions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -89,7 +90,7 @@ export function Samples() {
         )}
 
         <div className="grid grid-cols-3 gap-3">
-          {filtered.slice(0, 60).map((s, i) => {
+          {filtered.slice(0, limit).map((s, i) => {
             const sampleTests = tests.filter((t) => t.sample_id === s.id);
             return (
               <motion.div
@@ -135,9 +136,14 @@ export function Samples() {
             );
           })}
         </div>
-        {filtered.length > 60 && (
-          <div className="py-4 text-center text-[11px] text-faint">
-            showing 60 of {filtered.length} — virtualization planned (P1-5)
+        {filtered.length > limit && (
+          <div className="py-4 text-center">
+            <button
+              onClick={() => setLimit(limit + 60)}
+              className="cursor-pointer rounded-lg border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted"
+            >
+              Show 60 more · {filtered.length - limit} remaining
+            </button>
           </div>
         )}
       </div>

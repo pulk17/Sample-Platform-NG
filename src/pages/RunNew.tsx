@@ -1,5 +1,5 @@
-import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronLeft, GitBranch, Loader2, Play } from "lucide-react";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { ChevronLeft, GitBranch, Loader2, Play, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,10 @@ import { cn } from "@/lib/utils";
 export function RunNew() {
   const { data: tests = [] } = useRegressionTests();
   const navigate = useNavigate();
+  const search = useSearch({ from: "/runs/new" });
+
+  // Set when arriving from the test builder: run just this one test.
+  const [onlyTest, setOnlyTest] = useState<number | undefined>(search.test);
 
   const [repository, setRepository] = useState("CCExtractor/ccextractor");
   const [branch, setBranch] = useState("master");
@@ -31,20 +35,22 @@ export function RunNew() {
   const branchOk = isBranchName(branch);
 
   const selectedIds = useMemo(() => {
+    if (onlyTest !== undefined) return [onlyTest];
     if (cats.length === 0) return undefined; // full suite
     return tests
       .filter((t) => t.active && t.categories.some((c) => cats.includes(c)))
       .map((t) => t.id);
-  }, [cats, tests]);
+  }, [onlyTest, cats, tests]);
 
   const estimate = useMemo(() => {
+    if (onlyTest !== undefined) return { count: 1, minutes: 1 };
     const pool =
       selectedIds === undefined
         ? tests.filter((t) => t.active)
         : tests.filter((t) => selectedIds.includes(t.id));
     const ms = pool.reduce((acc, t) => acc + (t.avg_runtime_ms ?? 15_000), 0);
     return { count: pool.length, minutes: Math.max(1, Math.round(ms / 60_000)) };
-  }, [selectedIds, tests]);
+  }, [onlyTest, selectedIds, tests]);
 
   const submit = async () => {
     setBusy(true);
@@ -146,7 +152,21 @@ export function RunNew() {
           <Label>
             Scope <span className="font-normal normal-case">— empty = full suite</span>
           </Label>
-          <div className="flex flex-wrap gap-1.5">
+          {onlyTest !== undefined && (
+            <div className="mb-2 flex items-center gap-2 rounded-lg border border-primary/40 bg-accent/40 px-3 py-2 text-[12px]">
+              <span>
+                Verification run for test <b>#{onlyTest}</b> only
+              </span>
+              <button
+                onClick={() => setOnlyTest(undefined)}
+                title="Run the full suite instead"
+                className="ml-auto cursor-pointer rounded p-0.5 text-faint hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
+          <div className={cn("flex flex-wrap gap-1.5", onlyTest !== undefined && "hidden")}>
             {categories.map((c) => {
               const on = cats.includes(c.name);
               return (

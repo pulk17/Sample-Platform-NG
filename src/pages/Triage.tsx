@@ -11,6 +11,7 @@ import { ConfirmDialog } from "@/components/ui/confirm";
 import {
   approveBaseline,
   snapshotTestsById,
+  useHealth,
   useRegressionTests,
   useRunFailures,
   useRuns,
@@ -32,6 +33,7 @@ import { cn } from "@/lib/utils";
 export function Triage() {
   const { data: runs = [], isLoading } = useRuns();
   const { data: tests = [] } = useRegressionTests();
+  const { data: health } = useHealth();
 
   // Latest platform runs that finished with failures — at most 3 cards.
   const failedRuns = useMemo(() => {
@@ -59,11 +61,27 @@ export function Triage() {
           <span className="text-xs text-faint">
             latest runs with failures · live from the platform
           </span>
-          {failingNow > 0 && (
-            <span className="ml-auto text-[11px] text-faint">
-              {failingNow} tests red in the latest snapshot analytics
-            </span>
-          )}
+          <span className="ml-auto flex items-center gap-3">
+            {failingNow > 0 && (
+              <span className="text-[11px] text-faint">
+                {failingNow} tests red in the latest snapshot analytics
+              </span>
+            )}
+            {health && (
+              <span
+                className="flex items-center gap-1.5 text-[11px] text-faint"
+                title={health.dependencies.map((d) => `${d.name}: ${d.status}`).join("\n")}
+              >
+                <span
+                  className={cn(
+                    "size-2 rounded-full",
+                    health.status === "ok" ? "bg-success" : "bg-destructive",
+                  )}
+                />
+                platform {health.status === "ok" ? "healthy" : "degraded"}
+              </span>
+            )}
+          </span>
         </div>
       </div>
 

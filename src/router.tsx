@@ -36,6 +36,11 @@ const runNewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/runs/new",
   component: RunNew,
+  // ?test=<id> scopes the run to a single regression test (the builder's
+  // "queue verification run" entry point).
+  validateSearch: (search: Record<string, unknown>): { test?: number } => ({
+    test: search.test ? Number(search.test) : undefined,
+  }),
 });
 
 const runDetailRoute = createRoute({

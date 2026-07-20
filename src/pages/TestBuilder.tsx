@@ -12,9 +12,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
-import { RunStatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -24,22 +23,26 @@ import {
   commandPresets,
   createRegressionTest,
   deriveCategories,
-  simulateDryRun,
   useRegressionTests,
   useSamples,
 } from "@/lib/api";
-import type { DryRunState, Sample } from "@/lib/types";
+import { COMMAND_MAX } from "@/lib/validate";
+import type { Sample } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const STEPS = ["Sample", "Command", "Dry run", "Bless output", "Describe"] as const;
+const STEPS = ["Sample", "Command", "Describe"] as const;
 
+/**
+ * Guided test creation. The test is stored as inactive ("draft") — the
+ * follow-up is a real verification run on CI (offered on the success
+ * screen), and activation happens from the test detail once a baseline
+ * exists. No step here pretends to run anything.
+ */
 export function TestBuilder() {
   const [step, setStep] = useState(0);
   const [sample, setSample] = useState<Sample | null>(null);
   const [command, setCommand] = useState("");
   const [expectedRc, setExpectedRc] = useState(0);
-  const [dryStates, setDryStates] = useState<DryRunState[] | null>(null);
-  const [blessed, setBlessed] = useState<Record<string, boolean>>({});
   const [description, setDescription] = useState("");
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [saved, setSaved] = useState<number | null>(null);
@@ -69,13 +72,10 @@ export function TestBuilder() {
     }
   };
 
-  const dryDone = dryStates?.every((s) => s.status === "completed") ?? false;
   const canNext =
     (step === 0 && !!sample) ||
     (step === 1 && command.trim().length > 0) ||
-    (step === 2 && dryDone) ||
-    (step === 3 && Object.values(blessed).some(Boolean)) ||
-    step === 4;
+    step === 2;
 
   if (saved !== null) {
     return (
@@ -92,17 +92,24 @@ export function TestBuilder() {
         </h1>
         <p className="max-w-md text-[13px] text-faint">
           It stays inactive until its output is verified on a real run and a
-          baseline is recorded — then activate it from Regression tests.
+          baseline is recorded. Queue a run scoped to just this test to see
+          what it actually produces on both platforms.
         </p>
         <div className="flex gap-2">
-          <Button onClick={() => navigate({ to: "/tests", search: { t: saved } })}>
-            Open test #{saved}
+          <Button onClick={() => navigate({ to: "/runs/new", search: { test: saved } })}>
+            <Play /> Queue verification run
           </Button>
           <Button
             variant="outline"
+            onClick={() => navigate({ to: "/tests", search: { t: saved } })}
+          >
+            Open test #{saved}
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => {
-              setStep(0); setSample(null); setCommand(""); setDryStates(null);
-              setBlessed({}); setDescription(""); setSelectedCats([]); setSaved(null);
+              setStep(0); setSample(null); setCommand(""); setExpectedRc(0);
+              setDescription(""); setSelectedCats([]); setSaved(null);
             }}
           >
             Create another
@@ -123,7 +130,7 @@ export function TestBuilder() {
             <FlaskConical className="size-4 text-primary" /> New regression test
           </h1>
           <p className="text-[13px] text-faint">
-            Define → verify on real CI → bless the output. Draft until blessed.
+            Define → verify on real CI → activate. Stored as a draft until verified.
           </p>
         </div>
       </div>
@@ -167,13 +174,7 @@ export function TestBuilder() {
             setExpectedRc={setExpectedRc}
           />
         )}
-        {step === 2 && sample && (
-          <StepDryRun sample={sample} command={command} states={dryStates} setStates={setDryStates} />
-        )}
-        {step === 3 && dryStates && (
-          <StepBless states={dryStates} blessed={blessed} setBlessed={setBlessed} />
-        )}
-        {step === 4 && (
+        {step === 2 && (
           <StepDescribe
             description={description}
             setDescription={setDescription}
@@ -204,7 +205,7 @@ export function TestBuilder() {
   );
 }
 
-/* Step 1 — sample picker with context card (real samples from prod) */
+/* Step 1 — sample picker with context card */
 function StepSample({ selected, onSelect }: { selected: Sample | null; onSelect: (s: Sample) => void }) {
   const [q, setQ] = useState("");
   const { data: allSamples = [] } = useSamples();
@@ -332,8 +333,12 @@ function StepCommand({
             className="rounded-none border-0 font-mono text-xs shadow-none focus-visible:ring-0"
             placeholder="--autoprogram --out=srt --latin1"
             value={command}
+            maxLength={COMMAND_MAX}
             onChange={(e) => setCommand(e.target.value)}
           />
+        </div>
+        <div className="mt-1 text-[11px] text-warning">
+          Runs verbatim on the CI VMs once the test is active — double-check flags.
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -351,140 +356,7 @@ function StepCommand({
   );
 }
 
-/* Step 3 — dry run on CI */
-function StepDryRun({
-  sample, command, states, setStates,
-}: {
-  sample: Sample;
-  command: string;
-  states: DryRunState[] | null;
-  setStates: (s: DryRunState[]) => void;
-}) {
-  const [running, setRunning] = useState(false);
-  const cancelRef = useRef<(() => void) | null>(null);
-  useEffect(() => () => cancelRef.current?.(), []);
-
-  const start = () => {
-    setRunning(true);
-    cancelRef.current = simulateDryRun(sample, command, (s) => {
-      setStates(s);
-      if (s.every((x) => x.status === "completed")) setRunning(false);
-    });
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="rounded-xl border bg-card p-4 shadow-card">
-        <div className="mb-1 text-[13px] font-medium">Verify before it becomes a baseline</div>
-        <p className="text-xs text-faint">
-          Runs{" "}
-          <code className="rounded bg-muted px-1">ccextractor {command || "…"}</code> against{" "}
-          <span className="font-medium text-muted-foreground">{sample.original_name}</span> on
-          both platform VMs using the latest master build. The produced output becomes the
-          candidate baseline.
-        </p>
-        {!states && (
-          <Button className="mt-3" onClick={start} disabled={running}>
-            {running ? <Loader2 className="animate-spin" /> : <Play />} Start dry run
-          </Button>
-        )}
-      </div>
-
-      {states?.map((s) => (
-        <div key={s.platform} className="rounded-xl border bg-card p-4 shadow-card">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {s.platform}
-            </span>
-            <span className="flex items-center gap-3 text-[11px] text-faint">
-              {s.message}
-              <RunStatusBadge status={s.status} />
-            </span>
-          </div>
-          <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-muted">
-            <motion.div
-              className={cn("h-full rounded-full", s.status === "completed" ? "bg-success" : "bg-primary")}
-              animate={{ width: `${s.progress_pct}%` }}
-              transition={{ duration: 0.7, ease: "easeOut" }}
-            />
-          </div>
-          {s.outputs.map((o) => (
-            <div key={o.filename} className="mt-3 rounded-lg bg-muted/50 p-3 text-xs">
-              <div className="flex items-center justify-between font-mono">
-                <span>{o.filename}</span>
-                <span className="text-faint">
-                  rc {o.exit_code} · {(o.runtime_ms / 1000).toFixed(1)}s ·{" "}
-                  {(o.size_bytes / 1024).toFixed(0)} KB
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* Step 4 — bless outputs as baselines */
-function StepBless({
-  states, blessed, setBlessed,
-}: {
-  states: DryRunState[];
-  blessed: Record<string, boolean>;
-  setBlessed: (b: Record<string, boolean>) => void;
-}) {
-  const linux = states.find((s) => s.platform === "linux")!;
-  const windows = states.find((s) => s.platform === "windows")!;
-  const agree =
-    linux.outputs[0] && windows.outputs[0] && linux.outputs[0].hash === windows.outputs[0].hash;
-
-  return (
-    <div className="flex flex-col gap-4">
-      {agree ? (
-        <div className="flex items-center gap-2 rounded-xl border border-success/30 bg-success/8 p-3 text-[13px] text-success">
-          <CheckCircle2 className="size-4" /> Both platforms produced identical output — safe to bless.
-        </div>
-      ) : (
-        <div className="rounded-xl border border-warning/30 bg-warning/8 p-3 text-[13px] text-warning">
-          Platforms differ — each output becomes a separate acceptable variant.
-        </div>
-      )}
-      {linux.outputs.map((o) => {
-        const key = o.hash;
-        return (
-          <label
-            key={key}
-            className={cn(
-              "flex cursor-pointer flex-col gap-2 rounded-xl border bg-card p-4 shadow-card transition-all duration-150",
-              blessed[key] && "border-primary/50 ring-2 ring-ring",
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                className="size-4 accent-(--primary)"
-                checked={!!blessed[key]}
-                onChange={(e) => setBlessed({ ...blessed, [key]: e.target.checked })}
-              />
-              <span className="font-mono text-xs">{o.filename}</span>
-              <span className="ml-auto font-mono text-[11px] text-faint">
-                {o.hash.slice(0, 20)}…
-              </span>
-            </div>
-            <pre className="max-h-40 overflow-y-auto rounded-lg bg-muted/60 p-3 font-mono text-[11px] leading-relaxed">
-              {o.preview.join("\n")}
-            </pre>
-            <span className="text-[11px] text-faint">
-              Blessing stores this file as the expected baseline (content-addressed by hash).
-            </span>
-          </label>
-        );
-      })}
-    </div>
-  );
-}
-
-/* Step 5 — categorize & describe */
+/* Step 3 — categorize & describe */
 function StepDescribe({
   description, setDescription, selectedCats, setSelectedCats,
 }: {

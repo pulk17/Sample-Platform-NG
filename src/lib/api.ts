@@ -11,8 +11,6 @@ import testsJson from "@/mocks/generated/tests.json";
 import { getSession, logout } from "@/lib/auth";
 import type {
   Category,
-  DryRunOutput,
-  DryRunState,
   LiveRun,
   LogicalRun,
   Platform,
@@ -535,6 +533,54 @@ export function createRun(body: {
   return apiSend<{ run_id: number }>("POST", "/runs", body);
 }
 
+/** Cancel a queued/running run. Idempotent — a finished run returns no_op. */
+export function cancelRun(runId: number, reason?: string) {
+  return apiSend<{ run_id: number; status: string; message: string }>(
+    "POST",
+    `/runs/${runId}/cancel`,
+    reason ? { reason } : {},
+  );
+}
+
+/** One artifact of a finished run: build log, expected/actual outputs. */
+export interface RunArtifact {
+  artifact_id: string;
+  run_id: number;
+  sample_id: number | null;
+  type: string;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number | null;
+  storage_status: string;
+  download_url: string | null;
+}
+
+export function useRunArtifacts(runId: number | null) {
+  return useQuery({
+    queryKey: ["run-artifacts", runId],
+    enabled: runId !== null,
+    staleTime: 300_000,
+    queryFn: () => fetchAll<RunArtifact>(`/runs/${runId}/artifacts`, 200),
+  });
+}
+
+/** Infra fault derived from progress messages (VM died, build never came). */
+export interface InfraError {
+  type: string;
+  severity: string;
+  message: string;
+  timestamp?: string | null;
+}
+
+export function useInfraErrors(runId: number | null) {
+  return useQuery({
+    queryKey: ["run-infra-errors", runId],
+    enabled: runId !== null,
+    staleTime: 300_000,
+    queryFn: () => fetchAll<InfraError>(`/runs/${runId}/infrastructure-errors`, 50),
+  });
+}
+
 /** Unified diff for one failing output of a run. */
 export async function fetchDiff(args: {
   runId: number;
@@ -602,60 +648,6 @@ export function triageGroups(maxRuns = 3): TriageGroup[] {
     }
   }
   return out;
-}
-
-/* ---------------- dry run simulation (builder step 3) ---------------- */
-
-export function simulateDryRun(
-  sample: Sample,
-  _command: string,
-  onUpdate: (states: DryRunState[]) => void,
-): () => void {
-  const mkOutput = (platform: Platform): DryRunOutput => ({
-    filename: `${sample.sha.slice(0, 12)}_out.srt`,
-    hash: "c41d8e" + sample.sha.slice(6, 40),
-    size_bytes: 48_213,
-    runtime_ms: platform === "linux" ? 9_412 : 14_803,
-    exit_code: 0,
-    preview: [
-      "1",
-      "00:00:01,120 --> 00:00:03,400",
-      "Good evening. Tonight's headlines:",
-      "",
-      "2",
-      "00:00:03,480 --> 00:00:06,910",
-      "Parliament approves the new",
-      "broadcasting standards bill.",
-    ],
-  });
-
-  const phases: { status: DryRunState["status"]; message: string; pct: number }[] = [
-    { status: "preparation", message: "Provisioning VM", pct: 10 },
-    { status: "building", message: "Building CCExtractor @ master", pct: 40 },
-    { status: "testing", message: `Running on ${sample.original_name}`, pct: 75 },
-    { status: "completed", message: "Done", pct: 100 },
-  ];
-
-  let step = 0;
-  const timer = setInterval(() => {
-    const linuxStep = Math.min(step, phases.length - 1);
-    const winStep = Math.min(Math.max(step - 1, 0), phases.length - 1);
-    const states: DryRunState[] = (["linux", "windows"] as Platform[]).map((p) => {
-      const ph = phases[p === "linux" ? linuxStep : winStep];
-      return {
-        platform: p,
-        status: ph.status,
-        progress_pct: ph.pct,
-        message: ph.message,
-        outputs: ph.status === "completed" ? [mkOutput(p)] : [],
-      };
-    });
-    onUpdate(states);
-    step += 1;
-    if (step > phases.length) clearInterval(timer);
-  }, 900);
-
-  return () => clearInterval(timer);
 }
 
 export function commandPresets(tests: RegressionTest[], limit = 6) {

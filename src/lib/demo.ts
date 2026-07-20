@@ -336,6 +336,28 @@ function route(path: string, method: string, body: unknown): Response {
       const rows = status === "fail" ? runFailures(pl) : [...runFailures(pl), ...passRows(pl)];
       return OK(paginate(rows, limit, offset));
     }
+    if (seg[2] === "cancel" && method === "POST")
+      return OK({ run_id: rid, action: "cancel", status: "accepted", message: "Run has been canceled." }, 202);
+    if (seg[2] === "artifacts") {
+      const arts: unknown[] = [{
+        artifact_id: `buildlog_${rid}`, run_id: rid, sample_id: null, type: "build_log",
+        filename: `${rid}.txt`, content_type: "text/plain", size_bytes: 52_140,
+        storage_status: "ok", download_url: null,
+      }];
+      for (const id of pl.failing_ids.slice(0, 4)) {
+        const t = testById.get(id);
+        if (!t) continue;
+        for (const kind of ["expected", "actual"] as const) {
+          arts.push({
+            artifact_id: `${kind}_${rid}_${t.id}`, run_id: rid, sample_id: t.sample_id,
+            type: `${kind}_output`, filename: `${t.sample_sha.slice(0, 16)}_${kind}.srt`,
+            content_type: "application/octet-stream", size_bytes: 40_000 + t.id * 7,
+            storage_status: "ok", download_url: null,
+          });
+        }
+      }
+      return OK(paginate(arts, limit, offset));
+    }
     if (seg.includes("diff")) return OK({ format: "unified", content: SRT_DIFF });
     if (seg.includes("baseline-approval")) return OK({ message: "Baseline updated." });
   }
