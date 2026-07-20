@@ -42,6 +42,11 @@ npm run build:demo # static dist/, any credentials sign in
 `deploy/nginx.example.conf` shows the production layout (static app +
 proxied API).
 
+The bundled snapshot (`src/mocks/generated/`) holds only data that is
+already public on the classic site — test commands, sample names/hashes,
+run outcomes. No accounts, tokens or emails; `tools/extract_fixtures.py`
+selects columns from an explicit allowlist, keep it that way.
+
 ## Stack
 
 Vite, React 19, TypeScript, Tailwind 4, TanStack Router + Query, motion,

@@ -2,13 +2,28 @@
 
 Streams the mysqldump file, parses INSERT tuples for the tables we need,
 aggregates recent run results, and writes JSON into the web project.
+
+Usage:
+    SP_DUMP=/path/to/dump.sql python tools/extract_fixtures.py
+
+The dump contains the full production database — keep it out of the repo,
+delete it when done, and never widen COLS below without checking the new
+columns for user data (emails, tokens, IPs). Everything COLS currently
+selects is public on the classic site already.
 """
 import json
+import os
+import sys
 from collections import defaultdict
 from pathlib import Path
 
-DUMP = Path(r"C:\Users\pulk1t\Downloads\sample_platform_full_dump.sql")
-OUT = Path(r"C:\Pulkit\Coding\GSoC\Sample_Platform_NG\sample-platform-web\src\mocks\generated")
+DUMP = Path(os.environ.get("SP_DUMP", "sample_platform_full_dump.sql"))
+OUT = Path(os.environ.get(
+    "SP_FIXTURES_OUT",
+    Path(__file__).resolve().parents[1] / "src" / "mocks" / "generated",
+))
+if not DUMP.is_file():
+    sys.exit(f"dump not found: {DUMP} (set SP_DUMP)")
 OUT.mkdir(parents=True, exist_ok=True)
 
 COLS = {

@@ -11,7 +11,13 @@ interface Picked {
   file: File;
   sha: string | null; // null while hashing
   duplicateOf: string | null;
+  tooLarge?: boolean;
 }
+
+// crypto.subtle has no streaming API, so hashing means loading the whole
+// file into memory. Past this size that risks killing the tab — skip the
+// browser-side duplicate check and let the server catch it instead.
+const HASH_LIMIT = 1024 ** 3; // 1 GiB
 
 /**
  * Sample upload. Files are hashed in the browser and checked against the
@@ -28,6 +34,10 @@ export function Upload() {
 
   const addFiles = async (files: FileList | File[]) => {
     for (const file of Array.from(files)) {
+      if (file.size > HASH_LIMIT) {
+        setItems((prev) => [...prev, { file, sha: null, duplicateOf: null, tooLarge: true }]);
+        continue;
+      }
       const entry: Picked = { file, sha: null, duplicateOf: null };
       setItems((prev) => [...prev, entry]);
       const buf = await file.arrayBuffer();
@@ -104,7 +114,11 @@ export function Upload() {
                   {it.sha && ` · ${it.sha.slice(0, 20)}…`}
                 </div>
               </div>
-              {it.sha === null ? (
+              {it.tooLarge ? (
+                <Badge variant="secondary" title="Too big to hash in the browser — the server checks for duplicates on upload">
+                  dup check on server
+                </Badge>
+              ) : it.sha === null ? (
                 <span className="flex items-center gap-1.5 text-[11px] text-faint">
                   <Loader2 className="size-3 animate-spin" /> hashing
                 </span>
