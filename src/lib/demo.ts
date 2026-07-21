@@ -375,15 +375,15 @@ function route(path: string, method: string, body: unknown): Response {
       return OK(paginate(infra, limit, offset));
     }
     if (seg.includes("diff")) return OK({ format: "unified", content: SRT_DIFF });
-    if (seg.includes("baseline-approval"))
+    if (seg.includes("promote-baseline"))
       return OK({
-        status: "approved",
+        status: "promoted",
         run_id: rid,
         sample_id: Number(p(3)),
         regression_id: (body as { regression_id?: number })?.regression_id ?? 0,
         output_id: (body as { output_id?: number })?.output_id ?? 0,
-        requested_by: "carlos@ccextractor.org",
-        created_at: nowISO(),
+        promoted_by: "carlos@ccextractor.org",
+        promoted_at: nowISO(),
       });
   }
 

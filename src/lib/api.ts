@@ -431,9 +431,10 @@ export function useSampleHistory(sampleId: number | null) {
 /**
  * Promote a run's actual output to the expected baseline. This replaces the
  * stored hash for every future run, so the UI must confirm before calling.
- * The server enforces admin role + baselines:write.
+ * Admin-only and applied immediately — the server enforces admin role +
+ * baselines:write.
  */
-export async function approveBaseline(args: {
+export async function promoteBaseline(args: {
   runId: number;
   sampleId: number;
   regressionId: number;
@@ -441,7 +442,7 @@ export async function approveBaseline(args: {
 }): Promise<{ ok: boolean; message: string }> {
   const session = getSession();
   const res = await fetch(
-    `${BASE}/runs/${args.runId}/samples/${args.sampleId}/baseline-approval`,
+    `${BASE}/runs/${args.runId}/samples/${args.sampleId}/promote-baseline`,
     {
       method: "POST",
       headers: {
@@ -458,7 +459,7 @@ export async function approveBaseline(args: {
   const body = await res.json().catch(() => ({}));
   return {
     ok: res.ok,
-    message: body.message ?? (res.ok ? "Baseline updated." : res.statusText),
+    message: body.message ?? (res.ok ? "Baseline promoted." : res.statusText),
   };
 }
 

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import {
-  approveBaseline,
+  promoteBaseline,
   snapshotTestsById,
   useHealth,
   useRegressionTests,
@@ -242,10 +242,10 @@ function FailureRow({ f, runId }: { f: RunFailure; runId: number }) {
   const snap = snapshotTestsById.get(f.regression_test_id);
   const output = f.outputs.find((o) => o.status === "fail") ?? f.outputs[0];
 
-  const doApprove = async () => {
+  const doPromote = async () => {
     if (!output) return;
     setBusy(true);
-    const res = await approveBaseline({
+    const res = await promoteBaseline({
       runId,
       sampleId: f.sample_id,
       regressionId: f.regression_test_id,
@@ -253,7 +253,7 @@ function FailureRow({ f, runId }: { f: RunFailure; runId: number }) {
     });
     setBusy(false);
     setConfirming(false);
-    setResult(res.ok ? "Baseline updated." : res.message);
+    setResult(res.ok ? "Baseline promoted." : res.message);
   };
 
   return (
@@ -326,7 +326,7 @@ function FailureRow({ f, runId }: { f: RunFailure; runId: number }) {
         }
         confirmLabel={busy ? "Promoting…" : "Replace baseline"}
         busy={busy}
-        onConfirm={doApprove}
+        onConfirm={doPromote}
       />
 
       <DiffDrawer target={diff} onClose={() => setDiff(null)} />
