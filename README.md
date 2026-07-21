@@ -14,9 +14,10 @@ platform's REST API.
 | `/runs/:id` | One run — metadata, progress stepper, results by category, diffs on failing tests |
 | `/runs/new` | Queue a run against any fork/commit, full suite or a category subset |
 | `/tests` | Regression tests — category rail, filterable list, editable detail panel with per-platform history |
-| `/tests/new` | Guided test creation: sample → command → dry run → bless output |
+| `/tests/new` | Guided test creation: pick sample → compose command → describe, then queue a verification run |
 | `/samples` | Sample library with extension facets; drawer shows upload details, media info and cross-run history |
 | `/upload` | Client-side SHA-256 duplicate check before any transfer |
+| `/status` | Platform health, CI queue depth, last master run per platform |
 | `/admin` | Users & roles, CI queue, API tokens |
 
 ## Running it

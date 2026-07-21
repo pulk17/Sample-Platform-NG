@@ -358,8 +358,33 @@ function route(path: string, method: string, body: unknown): Response {
       }
       return OK(paginate(arts, limit, offset));
     }
+    if (seg[2] === "infrastructure-errors") {
+      // Real backend derives these from progress messages; a run stuck in
+      // preparation never produced a build, which is a platform fault, not a
+      // test failure. Everything else has none.
+      const infra =
+        pl.status === "preparation"
+          ? [{
+              type: "build_artifact_missing",
+              severity: "error",
+              message:
+                "No CCExtractor build artifact was produced for this commit — the run never reached the testing phase.",
+              timestamp: pl.started_at,
+            }]
+          : [];
+      return OK(paginate(infra, limit, offset));
+    }
     if (seg.includes("diff")) return OK({ format: "unified", content: SRT_DIFF });
-    if (seg.includes("baseline-approval")) return OK({ message: "Baseline updated." });
+    if (seg.includes("baseline-approval"))
+      return OK({
+        status: "approved",
+        run_id: rid,
+        sample_id: Number(p(3)),
+        regression_id: (body as { regression_id?: number })?.regression_id ?? 0,
+        output_id: (body as { output_id?: number })?.output_id ?? 0,
+        requested_by: "carlos@ccextractor.org",
+        created_at: nowISO(),
+      });
   }
 
   return OK({ data: [], meta: {}, pagination: { total: 0, limit, offset, next_offset: null } });

@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Activity, FileVideo, FlaskConical, Home, Search } from "lucide-react";
+import { Activity, FileVideo, FlaskConical, Gauge, Home, Search } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -49,6 +49,7 @@ export function CommandPalette() {
       { id: "p-runs", icon: <Activity className="size-3.5" />, title: "Test results", go: () => navigate({ to: "/runs" }) },
       { id: "p-tests", icon: <FlaskConical className="size-3.5" />, title: "Regression tests", go: () => navigate({ to: "/tests" }) },
       { id: "p-samples", icon: <FileVideo className="size-3.5" />, title: "Samples", go: () => navigate({ to: "/samples" }) },
+      { id: "p-status", icon: <Gauge className="size-3.5" />, title: "Platform status", go: () => navigate({ to: "/status" }) },
     ];
     if (!needle) return pages;
 

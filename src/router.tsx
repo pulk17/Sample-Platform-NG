@@ -12,6 +12,7 @@ import { RunDetail } from "@/pages/RunDetail";
 import { RunNew } from "@/pages/RunNew";
 import { Runs } from "@/pages/Runs";
 import { Samples } from "@/pages/Samples";
+import { Status } from "@/pages/Status";
 import { TestBuilder } from "@/pages/TestBuilder";
 import { Triage } from "@/pages/Triage";
 import { Upload } from "@/pages/Upload";
@@ -94,6 +95,12 @@ const uploadRoute = createRoute({
   component: Upload,
 });
 
+const statusRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/status",
+  component: Status,
+});
+
 const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/admin",
@@ -113,6 +120,7 @@ const routeTree = rootRoute.addChildren([
   testBuilderRoute,
   uploadRoute,
   samplesRoute,
+  statusRoute,
   adminRoute,
 ]);
 

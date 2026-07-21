@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:demo": "VITE_DEMO=1 vite build --base=./",
+    "build:demo": "vite build --base=./ --mode demo",
     "lint": "oxlint",
     "preview": "vite preview"
   },

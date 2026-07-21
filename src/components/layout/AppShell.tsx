@@ -3,6 +3,7 @@ import {
   Activity,
   FileVideo,
   FlaskConical,
+  Gauge,
   Inbox,
   LogOut,
   Moon,
@@ -39,7 +40,10 @@ const sections = [
   },
   {
     label: "Platform",
-    items: [{ to: "/admin", label: "Administration", icon: Settings }],
+    items: [
+      { to: "/status", label: "Platform status", icon: Gauge },
+      { to: "/admin", label: "Administration", icon: Settings },
+    ],
   },
 ] as const;
 
