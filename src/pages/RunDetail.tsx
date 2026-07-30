@@ -3,14 +3,18 @@ import { Link, useParams } from "@tanstack/react-router";
 import {
   AlertTriangle,
   Ban,
+  Binary,
+  Bug,
   Check,
   ChevronDown,
   ChevronLeft,
   Download,
   ExternalLink,
+  FileText,
   GitCommitHorizontal,
   GitPullRequest,
   Loader2,
+  Terminal,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useState } from "react";
@@ -26,10 +30,11 @@ import {
   useRunArtifacts,
   useRunProgress,
   useRunSamples,
+  type RunArtifact,
   type RunFailure,
 } from "@/lib/api";
 import { canOperateCi, getSession } from "@/lib/auth";
-import { githubUrl } from "@/lib/validate";
+import { githubUrl, httpsUrl } from "@/lib/validate";
 import { cn } from "@/lib/utils";
 
 const STAGES = ["preparation", "testing", "completed"] as const;
@@ -220,7 +225,7 @@ export function RunDetail() {
           </div>
         </div>
 
-        {finished && <ArtifactsSection runId={id} />}
+        {finished && <ArtifactsSection runId={id} samples={samples} />}
 
         {/* Results by category */}
         <h2 className="mb-1 text-[15px] font-semibold tracking-tight">Test results</h2>
@@ -340,64 +345,332 @@ function CategoryBlock({
   );
 }
 
-/** Build log and output files of a finished run, with download links where
- * storage still has the file (GCS-backed runs get signed URLs). */
-function ArtifactsSection({ runId }: { runId: number }) {
+/** One expected-vs-actual output, paired from the run's artifacts. A single
+ * regression-test output can carry several accepted expected variants. */
+interface OutputComparison {
+  key: string;
+  rtId: number;
+  outputId: number;
+  ext: string;
+  expected: RunArtifact[];
+  actual: RunArtifact | null;
+}
+
+/** Run-level (non per-output) artifacts, in display order. */
+const RUN_FILE_TYPES = ["build_log", "binary", "coredump", "combined_stdout"] as const;
+const RUN_FILE_LABEL: Record<string, string> = {
+  build_log: "Build log",
+  binary: "Binary",
+  coredump: "Core dump",
+  combined_stdout: "Combined stdout",
+};
+const RUN_FILE_ICON: Record<string, typeof FileText> = {
+  build_log: FileText,
+  binary: Binary,
+  coredump: Bug,
+  combined_stdout: Terminal,
+};
+
+/** Recover the (regression-test, output) a per-output artifact belongs to from
+ * its id — the backend encodes it as `expected|actual_{run}_{rt}_{output}`. */
+function parseOutputKey(id: string): { rtId: number; outputId: number } | null {
+  const m = /^(?:expected|actual)_\d+_(\d+)_(\d+)$/.exec(id);
+  return m ? { rtId: Number(m[1]), outputId: Number(m[2]) } : null;
+}
+
+function extOf(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot > 0 ? filename.slice(dot) : "";
+}
+
+/** Output filenames are `<content-hash><ext>` — show a readable head. */
+function shortHash(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  const base = dot > 0 ? filename.slice(0, dot) : filename;
+  const ext = dot > 0 ? filename.slice(dot) : "";
+  return base.length > 14 ? `${base.slice(0, 10)}…${ext}` : filename;
+}
+
+/** Build log and output files of a finished run, grouped into run-level files
+ * and paired expected/actual comparisons. Download links appear where storage
+ * still has the file (GCS-backed runs get signed URLs). */
+function ArtifactsSection({
+  runId,
+  samples,
+}: {
+  runId: number;
+  samples: RunFailure[];
+}) {
   const { data: artifacts = [], isLoading } = useRunArtifacts(runId);
   const [showAll, setShowAll] = useState(false);
+  const [diff, setDiff] = useState<DiffTarget | null>(null);
+
+  const { runFiles, comparisons } = useMemo(() => {
+    const runFiles = RUN_FILE_TYPES.map((t) =>
+      artifacts.find((a) => a.type === t),
+    ).filter((a): a is RunArtifact => a != null);
+
+    const groups = new Map<string, OutputComparison>();
+    for (const a of artifacts) {
+      if (a.type !== "expected_output" && a.type !== "actual_output") continue;
+      const p = parseOutputKey(a.artifact_id);
+      const key = p ? `${p.rtId}_${p.outputId}` : a.artifact_id;
+      let g = groups.get(key);
+      if (!g) {
+        g = {
+          key,
+          rtId: p?.rtId ?? -1,
+          outputId: p?.outputId ?? -1,
+          ext: extOf(a.filename),
+          expected: [],
+          actual: null,
+        };
+        groups.set(key, g);
+      }
+      if (a.type === "expected_output") g.expected.push(a);
+      else g.actual = a;
+    }
+    return { runFiles, comparisons: [...groups.values()] };
+  }, [artifacts]);
+
+  const samplesByRt = useMemo(() => {
+    const m = new Map<number, RunFailure>();
+    for (const s of samples) m.set(s.regression_test_id, s);
+    return m;
+  }, [samples]);
 
   if (!isLoading && artifacts.length === 0) return null;
-  const visible = showAll ? artifacts : artifacts.slice(0, 8);
+
+  const visible = showAll ? comparisons : comparisons.slice(0, 6);
 
   return (
     <div className="mb-8">
       <h2 className="mb-1 text-[15px] font-semibold tracking-tight">Artifacts</h2>
       <p className="mb-3 text-[13px] text-faint">
-        Files this run produced — build log and expected/actual outputs.
+        Files this run produced — build log and expected vs actual outputs.
       </p>
       {isLoading && (
         <div className="flex items-center gap-2 text-xs text-faint">
           <Loader2 className="size-3 animate-spin" /> loading artifact list
         </div>
       )}
-      <div className="overflow-hidden rounded-xl border shadow-card">
-        {visible.map((a) => (
-          <div
-            key={a.artifact_id}
-            className="flex items-center gap-3 border-b bg-card px-3.5 py-2 text-[12px] last:border-0"
-          >
-            <span className="w-28 shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              {a.type.replace(/_/g, " ")}
-            </span>
-            <code className="min-w-0 flex-1 truncate">{a.filename}</code>
-            {a.size_bytes != null && (
-              <span className="shrink-0 tabular-nums text-faint">
-                {(a.size_bytes / 1024).toFixed(0)} KB
-              </span>
-            )}
-            {a.download_url ? (
-              <a
-                href={a.download_url}
-                download={a.filename}
-                className="flex shrink-0 items-center gap-1 font-medium text-primary hover:underline"
-              >
-                <Download className="size-3" /> download
-              </a>
-            ) : (
-              <span className="shrink-0 text-[11px] text-faint">
-                {a.storage_status === "ok" ? "on server" : a.storage_status}
-              </span>
-            )}
+
+      {runFiles.length > 0 && (
+        <div>
+          <SubLabel>Run files</SubLabel>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {runFiles.map((a) => (
+              <RunFileCard key={a.artifact_id} a={a} />
+            ))}
           </div>
-        ))}
+        </div>
+      )}
+
+      {comparisons.length > 0 && (
+        <div className="mt-4">
+          <SubLabel>Output comparisons · {comparisons.length}</SubLabel>
+          <div className="flex flex-col gap-2">
+            {visible.map((cmp) => {
+              const sample = samplesByRt.get(cmp.rtId);
+              return (
+                <ComparisonCard
+                  key={cmp.key}
+                  cmp={cmp}
+                  sample={sample}
+                  onDiff={
+                    sample
+                      ? () =>
+                          setDiff({
+                            runId,
+                            sampleId: sample.sample_id,
+                            regressionId: cmp.rtId,
+                            outputId: cmp.outputId,
+                            command: sample.command,
+                            sampleName: sample.sample_name,
+                          })
+                      : undefined
+                  }
+                />
+              );
+            })}
+          </div>
+          {comparisons.length > 6 && (
+            <button
+              onClick={() => setShowAll(!showAll)}
+              className="mt-1.5 cursor-pointer text-[11px] text-faint hover:text-foreground"
+            >
+              {showAll ? "show fewer" : `show all ${comparisons.length}`}
+            </button>
+          )}
+        </div>
+      )}
+
+      <DiffDrawer target={diff} onClose={() => setDiff(null)} />
+    </div>
+  );
+}
+
+function SubLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-faint">
+      {children}
+    </div>
+  );
+}
+
+/** Availability of one artifact file: a download link, on-server, or missing. */
+function FileStatus({ a, compact }: { a: RunArtifact; compact?: boolean }) {
+  const url = httpsUrl(a.download_url);
+  if (url) {
+    return (
+      <a
+        href={url}
+        download={a.filename}
+        className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+      >
+        <Download className="size-3" />
+        {!compact && "Download"}
+      </a>
+    );
+  }
+  const ok = a.storage_status === "ok";
+  return (
+    <span className={cn("shrink-0 text-[11px]", ok ? "text-faint" : "text-faint/60")}>
+      {ok ? "On server" : "Missing"}
+    </span>
+  );
+}
+
+function RunFileCard({ a }: { a: RunArtifact }) {
+  const Icon = RUN_FILE_ICON[a.type] ?? FileText;
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2 shadow-card">
+      <Icon className="size-4 shrink-0 text-faint" />
+      <div className="min-w-0 flex-1">
+        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {RUN_FILE_LABEL[a.type] ?? a.type.replace(/_/g, " ")}
+        </div>
+        <code className="block truncate text-[12px]" title={a.filename}>
+          {a.filename}
+        </code>
       </div>
-      {artifacts.length > 8 && (
-        <button
-          onClick={() => setShowAll(!showAll)}
-          className="mt-1.5 cursor-pointer text-[11px] text-faint hover:text-foreground"
+      {a.size_bytes != null && (
+        <span className="shrink-0 tabular-nums text-[11px] text-faint">
+          {(a.size_bytes / 1024).toFixed(0)} KB
+        </span>
+      )}
+      <FileStatus a={a} />
+    </div>
+  );
+}
+
+type CompareTone = "match" | "differs" | "noout";
+
+function StatusPill({ tone }: { tone: CompareTone }) {
+  const map: Record<CompareTone, [string, string]> = {
+    match: ["Match", "text-success bg-success/10"],
+    differs: ["Differs", "text-destructive bg-destructive/10"],
+    noout: ["No output", "text-warning bg-warning/10"],
+  };
+  const [label, cls] = map[tone];
+  return (
+    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", cls)}>
+      {label}
+    </span>
+  );
+}
+
+function OutputCol({
+  title,
+  files,
+  empty,
+}: {
+  title: string;
+  files: RunArtifact[];
+  empty?: string;
+}) {
+  return (
+    <div className="min-w-0 px-3.5 py-2">
+      <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-faint">
+        {title}
+      </div>
+      {files.length === 0 ? (
+        <span className="text-[11px] italic text-faint">{empty ?? "—"}</span>
+      ) : (
+        files.map((f, i) => (
+          <div key={f.artifact_id} className="flex items-center gap-2 py-0.5">
+            {files.length > 1 && (
+              <span className="shrink-0 text-[9px] text-faint">v{i + 1}</span>
+            )}
+            <code className="min-w-0 flex-1 truncate text-[11.5px]" title={f.filename}>
+              {shortHash(f.filename)}
+            </code>
+            <FileStatus a={f} compact />
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function ComparisonCard({
+  cmp,
+  sample,
+  onDiff,
+}: {
+  cmp: OutputComparison;
+  sample: RunFailure | undefined;
+  onDiff?: () => void;
+}) {
+  const label = sample?.sample_name ?? `Test #${cmp.rtId}`;
+  const outStatus = sample?.outputs.find((o) => o.output_id === cmp.outputId)?.status;
+  const matched =
+    cmp.actual != null &&
+    cmp.expected.some((e) => e.filename === cmp.actual!.filename);
+  const tone: CompareTone = !cmp.actual
+    ? "noout"
+    : outStatus === "pass" || matched
+      ? "match"
+      : "differs";
+
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card shadow-card">
+      <div className="flex items-center gap-2 border-b px-3.5 py-2">
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium" title={label}>
+          {label}
+        </span>
+        {cmp.ext && (
+          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+            {cmp.ext}
+          </span>
+        )}
+        <StatusPill tone={tone} />
+      </div>
+      {sample?.command && (
+        <code
+          className="block truncate border-b px-3.5 py-1.5 text-[11px] text-faint"
+          title={sample.command}
         >
-          {showAll ? "show fewer" : `show all ${artifacts.length}`}
-        </button>
+          #{cmp.rtId} · {sample.command}
+        </code>
+      )}
+      <div className="grid grid-cols-2 divide-x">
+        <OutputCol title="Expected" files={cmp.expected} />
+        <OutputCol
+          title="Actual"
+          files={cmp.actual ? [cmp.actual] : []}
+          empty="no output produced"
+        />
+      </div>
+      {onDiff && cmp.actual && tone === "differs" && (
+        <div className="border-t px-3.5 py-1.5 text-right">
+          <button
+            onClick={onDiff}
+            className="cursor-pointer text-[11px] font-medium text-primary hover:underline"
+          >
+            View diff
+          </button>
+        </div>
       )}
     </div>
   );

@@ -29,3 +29,14 @@ export function githubUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   return /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+([/?#]|$)/.test(url) ? url : null;
 }
+
+/**
+ * Allowlist for artifact download links. Same reasoning as githubUrl — these
+ * come straight from the API (signed storage URLs), and a javascript:/data:
+ * value would run in our origin on click. Only https:// downloads are ever
+ * expected; anything else renders as no link.
+ */
+export function httpsUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return /^https:\/\//i.test(url) ? url : null;
+}
