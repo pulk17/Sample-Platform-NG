@@ -77,6 +77,26 @@ const DEMO_USERS = [
 // Mutated by PATCH /users in demo so role changes stick for the session.
 const demoUserRoles = new Map(DEMO_USERS.map((u) => [u.user_id, u.role]));
 
+// Administration state. Mutated in place so demo edits stick for the session,
+// the same way role changes do.
+const demoCategoryCounts = new Map<string, number>();
+for (const t of tests)
+  for (const c of t.categories)
+    demoCategoryCounts.set(c, (demoCategoryCounts.get(c) ?? 0) + 1);
+const demoCategories = [...demoCategoryCounts.entries()]
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([name, test_count], i) => ({ id: i + 1, name, description: "", test_count }));
+
+const demoMaintenance = new Map([
+  ["linux", false],
+  ["windows", false],
+]);
+const demoBlocked = [
+  { user_id: 4242, comment: "Repeated abusive uploads" },
+  { user_id: 90210, comment: "Broken CI spam" },
+];
+const demoForbidden = ["bat", "com", "dll", "exe", "sh"];
+
 const SRT_DIFF = `--- expected
 +++ actual
 @@ -1,12 +1,14 @@
@@ -230,6 +250,83 @@ function route(path: string, method: string, body: unknown): Response {
       { run_id: 9350, platform: "linux", status: "queued", position: 1, queued_at: nowISO(), started_at: null },
     ], 50, 0), meta: { queue_depth: 1, running_count: 1 } });
 
+  // platform configuration
+  if (seg[0] === "system" && seg[1] === "maintenance") {
+    if (method === "PATCH") {
+      const plat = p(2);
+      if (!demoMaintenance.has(plat)) return ERR(400, "Invalid platform.");
+      const disabled = (body as { disabled?: boolean })?.disabled ?? false;
+      demoMaintenance.set(plat, disabled);
+      return OK({ platform: plat, disabled });
+    }
+    return OK({
+      platforms: [...demoMaintenance].map(([platform, disabled]) => ({ platform, disabled })),
+    });
+  }
+  if (seg[0] === "system" && seg[1] === "blocked-users") {
+    if (method === "POST") {
+      const id = (body as { user_id?: number })?.user_id ?? 0;
+      if (demoBlocked.some((b) => b.user_id === id))
+        return ERR(409, `GitHub user ${id} is already blocked.`);
+      const row = { user_id: id, comment: (body as { comment?: string })?.comment ?? "" };
+      demoBlocked.push(row);
+      return OK(row, 201);
+    }
+    if (method === "DELETE") {
+      const id = Number(p(2));
+      const i = demoBlocked.findIndex((b) => b.user_id === id);
+      if (i < 0) return ERR(404, `GitHub user ${id} is not blocked.`);
+      demoBlocked.splice(i, 1);
+      return OK({ user_id: id, deleted: true });
+    }
+    return OK(paginate([...demoBlocked].sort((a, b) => a.user_id - b.user_id), limit, offset));
+  }
+  if (seg[0] === "system" && seg[1] === "forbidden-extensions") {
+    if (method === "POST") {
+      const ext = ((body as { extension?: string })?.extension ?? "").toLowerCase();
+      if (demoForbidden.includes(ext)) return ERR(409, `Extension '${ext}' is already forbidden.`);
+      demoForbidden.push(ext);
+      return OK({ extension: ext }, 201);
+    }
+    if (method === "DELETE") {
+      const ext = p(2).replace(/^\.+/, "").toLowerCase();
+      const i = demoForbidden.indexOf(ext);
+      if (i < 0) return ERR(404, `Extension '${ext}' is not forbidden.`);
+      demoForbidden.splice(i, 1);
+      return OK({ extension: ext, deleted: true });
+    }
+    return OK(paginate([...demoForbidden].sort(), limit, offset));
+  }
+
+  // categories
+  if (seg[0] === "categories") {
+    if (method === "POST") {
+      const name = (body as { name?: string })?.name ?? "";
+      if (demoCategories.some((c) => c.name === name))
+        return ERR(409, `Category '${name}' already exists.`);
+      const row = { id: Date.now(), name, description: "", test_count: 0 };
+      demoCategories.push(row);
+      return OK(row, 201);
+    }
+    const target = demoCategories.find((c) => c.id === Number(p(1)));
+    if (method === "PATCH") {
+      if (!target) return ERR(404, "Category not found.");
+      const name = (body as { name?: string })?.name;
+      if (name && demoCategories.some((c) => c.name === name && c.id !== target.id))
+        return ERR(409, `Category '${name}' already exists.`);
+      if (name) target.name = name;
+      return OK(target);
+    }
+    if (method === "DELETE") {
+      if (!target) return ERR(404, "Category not found.");
+      if (target.test_count)
+        return ERR(409, `Category ${target.id} is used by ${target.test_count} regression test(s).`);
+      demoCategories.splice(demoCategories.indexOf(target), 1);
+      return OK({ id: target.id, deleted: true });
+    }
+    return OK(paginate(demoCategories, limit, offset));
+  }
+
   // users
   if (seg[0] === "users" && method === "GET")
     return OK(paginate(DEMO_USERS.map((u) => ({ ...u, role: demoUserRoles.get(u.user_id) })), 100, 0));
@@ -375,7 +472,7 @@ function route(path: string, method: string, body: unknown): Response {
       return OK(paginate(infra, limit, offset));
     }
     if (seg.includes("diff")) return OK({ format: "unified", content: SRT_DIFF });
-    if (seg.includes("promote-baseline"))
+    if (seg.includes("baseline-approval"))
       return OK({
         status: "promoted",
         run_id: rid,

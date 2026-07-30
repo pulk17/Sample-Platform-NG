@@ -442,7 +442,7 @@ export async function promoteBaseline(args: {
 }): Promise<{ ok: boolean; message: string }> {
   const session = getSession();
   const res = await fetch(
-    `${BASE}/runs/${args.runId}/samples/${args.sampleId}/promote-baseline`,
+    `${BASE}/runs/${args.runId}/samples/${args.sampleId}/baseline-approval`,
     {
       method: "POST",
       headers: {
@@ -473,18 +473,97 @@ export interface PlatformUser {
 }
 
 export function useUsers() {
+  // Paged: the platform has hundreds of accounts, and a single page would
+  // silently show the first 50 as if that were everyone.
   return useQuery({
     queryKey: ["users"],
-    queryFn: async () => {
-      const res = await apiGet<Envelope<PlatformUser>>("/users");
-      return res.data;
-    },
+    queryFn: () => fetchAll<PlatformUser>("/users"),
   });
 }
 
 export function updateUserRole(id: number, role: string) {
   return apiSend<PlatformUser>("PATCH", `/users/${id}`, { role });
 }
+
+/* ---------------- administration ---------------- */
+
+const apiDelete = <T,>(path: string) => apiSend<T>("DELETE", path, undefined);
+
+export interface LiveCategory {
+  id: number;
+  name: string;
+  description: string;
+  test_count: number;
+}
+
+export function useCategories() {
+  return useQuery({
+    queryKey: ["categories"],
+    queryFn: () => fetchAll<LiveCategory>("/categories"),
+  });
+}
+
+export const createCategory = (name: string) =>
+  apiSend<LiveCategory>("POST", "/categories", { name });
+
+export const renameCategory = (id: number, name: string) =>
+  apiSend<LiveCategory>("PATCH", `/categories/${id}`, { name });
+
+/** Refused with 409 while any regression test still references the category. */
+export const deleteCategory = (id: number) =>
+  apiDelete<{ id: number; deleted: boolean }>(`/categories/${id}`);
+
+export interface MaintenanceState {
+  platform: Platform;
+  disabled: boolean;
+}
+
+export function useMaintenance() {
+  return useQuery({
+    queryKey: ["maintenance"],
+    queryFn: () => apiGet<{ platforms: MaintenanceState[] }>("/system/maintenance"),
+  });
+}
+
+export const setMaintenance = (platform: Platform, disabled: boolean) =>
+  apiSend<MaintenanceState>("PATCH", `/system/maintenance/${platform}`, { disabled });
+
+export interface BlockedUser {
+  user_id: number;
+  comment: string;
+}
+
+export function useBlockedUsers() {
+  return useQuery({
+    queryKey: ["blocked-users"],
+    queryFn: () => fetchAll<BlockedUser>("/system/blocked-users"),
+  });
+}
+
+/** Keyed on the numeric GitHub account id — logins can be changed and reused. */
+export const blockUser = (userId: number, comment: string) =>
+  apiSend<BlockedUser>("POST", "/system/blocked-users", {
+    user_id: userId,
+    comment,
+  });
+
+export const unblockUser = (userId: number) =>
+  apiDelete<{ user_id: number }>(`/system/blocked-users/${userId}`);
+
+export function useForbiddenExtensions() {
+  return useQuery({
+    queryKey: ["forbidden-extensions"],
+    queryFn: () => fetchAll<string>("/system/forbidden-extensions"),
+  });
+}
+
+export const forbidExtension = (extension: string) =>
+  apiSend<{ extension: string }>("POST", "/system/forbidden-extensions", {
+    extension,
+  });
+
+export const allowExtension = (extension: string) =>
+  apiDelete<{ extension: string }>(`/system/forbidden-extensions/${extension}`);
 
 export function useHealth() {
   return useQuery({

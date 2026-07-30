@@ -17,8 +17,18 @@ const KEY = "sp-session";
 // the write scopes that actually matter — baseline replacement and token
 // administration — are only minted once /auth/me confirms a role that can
 // use them. Keeps the stored token boring for everyone else.
+//
+// Only admins may request the elevated set: the API rejects those scopes for
+// every other role at mint time, and the endpoints behind them (baseline
+// approval, user administration, platform configuration) are admin-only
+// anyway. Contributors edit the suite with runs:write, already in the base set.
 const BASE_SCOPES = ["runs:read", "runs:write", "results:read", "system:read"];
-const ELEVATED_SCOPES = [...BASE_SCOPES, "baselines:write", "tokens:manage"];
+const ELEVATED_SCOPES = [
+  ...BASE_SCOPES,
+  "baselines:write",
+  "tokens:manage",
+  "system:write",
+];
 
 export function getSession(): Session | null {
   try {
@@ -95,12 +105,18 @@ export async function login(email: string, password: string): Promise<Session> {
   const me = meRes.ok ? await meRes.json() : { role: "user" };
   const role = (me.role as Role) ?? "user";
 
-  if (role === "admin" || role === "contributor") {
-    // Swap the probe token for a write-capable one; the probe is revoked so
-    // it doesn't linger in the token list.
+  if (role === "admin") {
+    // Swap the probe token for a write-capable one; the probe is revoked
+    // either way so a failed upgrade doesn't leave it behind.
     const probe = minted.token;
-    minted = await mintToken(email, password, ELEVATED_SCOPES);
-    void revokeOnServer(probe);
+    try {
+      minted = await mintToken(email, password, ELEVATED_SCOPES);
+      void revokeOnServer(probe);
+    } catch (e) {
+      // Keep the working base-scope session rather than failing the sign-in;
+      // admin-only actions will surface a permission error if it comes to it.
+      console.warn("elevated token mint failed, continuing with base scopes:", e);
+    }
   }
 
   const session: Session = {
