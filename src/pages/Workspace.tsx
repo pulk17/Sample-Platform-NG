@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { Copy, Download, FileVideo, FlaskConical, Loader2, Lock, Search } from "lucide-react";
+import { Copy, FileVideo, FlaskConical, Loader2, Lock, Search } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 
@@ -445,14 +445,13 @@ function Detail({ test }: { test: RegressionTest }) {
                     <Badge variant="accent">original</Badge>
                     <code className="text-xs">{(b.hash ?? "").slice(0, 28)}…{b.extension}</code>
                     {b.ignore && <Badge variant="secondary">ignored</Badge>}
-                    <Button variant="ghost" size="sm" className="ml-auto">
-                      <Download /> download
-                    </Button>
+                    <CopyHash hash={`${b.hash ?? ""}${b.extension}`} />
                   </div>
                   {b.variants.map((v, i) => (
                     <div key={i} className="mt-2 flex items-center gap-2 border-t pt-2">
                       <Badge variant="secondary">variant {i + 1}</Badge>
                       <code className="text-xs text-muted-foreground">{v.slice(0, 28)}…</code>
+                      <CopyHash hash={`${v}${b.extension}`} />
                     </div>
                   ))}
                 </div>
@@ -472,6 +471,33 @@ function Detail({ test }: { test: RegressionTest }) {
         </section>
       </div>
     </motion.div>
+  );
+}
+
+/**
+ * Copies a baseline's filename in the sample repository.
+ *
+ * Downloading these would need an API route that serves a regression test's
+ * expected output; the only download endpoints today are per-run artifacts,
+ * which address the same file through a run that used it rather than through
+ * the test. Until that exists, the filename is what makes the file findable.
+ */
+function CopyHash({ hash }: { hash: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="ml-auto"
+      title={`Copy ${hash}`}
+      onClick={() => {
+        navigator.clipboard.writeText(hash);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      <Copy /> {copied ? "copied" : "copy name"}
+    </Button>
   );
 }
 

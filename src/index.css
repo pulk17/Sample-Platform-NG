@@ -84,9 +84,19 @@
   }
   html {
     color-scheme: light;
+    /* The type scale is authored in px, so there is no root font size to
+       raise — zoom scales the whole layout instead. Panes below size off
+       percentage heights rather than 100vh, which would keep measuring the
+       unzoomed viewport and overflow by exactly this factor. */
+    zoom: 1.15;
+    height: 100%;
   }
   html.dark {
     color-scheme: dark;
+  }
+  body,
+  #root {
+    height: 100%;
   }
   body {
     background: var(--color-background);

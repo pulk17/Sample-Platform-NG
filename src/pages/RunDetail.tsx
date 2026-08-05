@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import {
   cancelRun,
+  fetchRunLog,
   useInfraErrors,
   useRun,
   useRunArtifacts,
@@ -403,6 +404,7 @@ function ArtifactsSection({
 }) {
   const { data: artifacts = [], isLoading } = useRunArtifacts(runId);
   const [showAll, setShowAll] = useState(false);
+  const [showOutputs, setShowOutputs] = useState(false);
   const [diff, setDiff] = useState<DiffTarget | null>(null);
 
   const { runFiles, comparisons } = useMemo(() => {
@@ -468,7 +470,20 @@ function ArtifactsSection({
 
       {comparisons.length > 0 && (
         <div className="mt-4">
-          <SubLabel>Output comparisons · {comparisons.length}</SubLabel>
+          {/* Collapsed by default: a full run carries hundreds of these, and
+              expanding them all buries the run files above. */}
+          <button
+            onClick={() => setShowOutputs(!showOutputs)}
+            aria-expanded={showOutputs}
+            className="mb-2 flex cursor-pointer items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-faint transition-colors hover:text-foreground"
+          >
+            <ChevronDown
+              className={cn("size-3 transition-transform", !showOutputs && "-rotate-90")}
+            />
+            Output comparisons · {comparisons.length}
+          </button>
+          {showOutputs && (
+          <>
           <div className="flex flex-col gap-2">
             {visible.map((cmp) => {
               const sample = samplesByRt.get(cmp.rtId);
@@ -501,6 +516,8 @@ function ArtifactsSection({
             >
               {showAll ? "show fewer" : `show all ${comparisons.length}`}
             </button>
+          )}
+          </>
           )}
         </div>
       )}
@@ -541,8 +558,50 @@ function FileStatus({ a, compact }: { a: RunArtifact; compact?: boolean }) {
   );
 }
 
+/**
+ * Build-log download. The artifacts endpoint reports the log with a null
+ * download_url because it is read through /runs/{id}/logs instead of being
+ * served as a file, so the log is paged in and saved from a blob here rather
+ * than linked to.
+ */
+function LogDownload({ runId, filename }: { runId: number; filename: string }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    setFailed(false);
+    try {
+      const blob = new Blob([await fetchRunLog(runId)], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={save}
+      disabled={busy}
+      className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] font-medium text-primary hover:underline disabled:cursor-default disabled:opacity-60"
+    >
+      {busy ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
+      {busy ? "Preparing" : failed ? "Retry" : "Download"}
+    </button>
+  );
+}
+
 function RunFileCard({ a }: { a: RunArtifact }) {
   const Icon = RUN_FILE_ICON[a.type] ?? FileText;
+  const viaLogEndpoint =
+    a.type === "build_log" && a.storage_status === "ok" && !httpsUrl(a.download_url);
   return (
     <div className="flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2 shadow-card">
       <Icon className="size-4 shrink-0 text-faint" />
@@ -559,7 +618,11 @@ function RunFileCard({ a }: { a: RunArtifact }) {
           {(a.size_bytes / 1024).toFixed(0)} KB
         </span>
       )}
-      <FileStatus a={a} />
+      {viaLogEndpoint ? (
+        <LogDownload runId={a.run_id} filename={a.filename} />
+      ) : (
+        <FileStatus a={a} />
+      )}
     </div>
   );
 }

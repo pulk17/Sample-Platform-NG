@@ -5,13 +5,24 @@ import { cn } from "@/lib/utils";
 /**
  * Persisted, draggable width for a pane. Returns the current width and a
  * <ResizeHandle> to drop on the pane's trailing edge.
+ *
+ * Pass edge="leading" for a pane anchored to the right of the screen: its
+ * handle sits on the left, where dragging towards the left has to widen
+ * rather than narrow it.
  */
-export function useResizableWidth(key: string, initial: number, min: number, max: number) {
+export function useResizableWidth(
+  key: string,
+  initial: number,
+  min: number,
+  max: number,
+  edge: "trailing" | "leading" = "trailing",
+) {
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem(`sp-w-${key}`));
     return saved >= min && saved <= max ? saved : initial;
   });
   const dragging = useRef(false);
+  const sign = edge === "leading" ? -1 : 1;
 
   const onMouseDown = useCallback(() => {
     dragging.current = true;
@@ -23,7 +34,7 @@ export function useResizableWidth(key: string, initial: number, min: number, max
     const onMove = (e: MouseEvent) => {
       if (!dragging.current) return;
       setWidth((w) => {
-        const next = Math.min(max, Math.max(min, w + e.movementX));
+        const next = Math.min(max, Math.max(min, w + sign * e.movementX));
         return next;
       });
     };
@@ -43,12 +54,15 @@ export function useResizableWidth(key: string, initial: number, min: number, max
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [key, min, max]);
+  }, [key, min, max, sign]);
 
   const handle = (
     <div
       onMouseDown={onMouseDown}
-      className="group relative z-10 -mr-1 w-2 shrink-0 cursor-col-resize"
+      className={cn(
+        "group relative z-10 w-2 shrink-0 cursor-col-resize",
+        edge === "leading" ? "-ml-1" : "-mr-1",
+      )}
       role="separator"
       aria-orientation="vertical"
     >

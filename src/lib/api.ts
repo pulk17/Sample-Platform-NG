@@ -644,6 +644,30 @@ export function useRunArtifacts(runId: number | null) {
   });
 }
 
+/**
+ * Fetch a run's whole build log and hand it back as one string.
+ *
+ * The artifacts endpoint reports the build log with a null download_url —
+ * it is read through /runs/{id}/logs rather than served as a file — so the
+ * only way to offer it as a download is to page it and rejoin it here. Each
+ * line's `message` is the raw log line verbatim, so joining on newline
+ * reproduces the file. Paging is cursor-based, not offset, so fetchAll
+ * cannot be reused.
+ */
+export async function fetchRunLog(runId: number, maxLines = 200_000): Promise<string> {
+  const lines: string[] = [];
+  let cursor: string | null = null;
+  for (;;) {
+    const qs = `limit=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+    const page: { data: { message: string }[]; pagination?: { next_cursor: string | null } } =
+      await apiGet(`/runs/${runId}/logs?${qs}`);
+    for (const l of page.data) lines.push(l.message);
+    cursor = page.pagination?.next_cursor ?? null;
+    if (cursor === null || page.data.length === 0 || lines.length >= maxLines) break;
+  }
+  return lines.join("\n");
+}
+
 /** Infra fault derived from progress messages (VM died, build never came). */
 export interface InfraError {
   type: string;

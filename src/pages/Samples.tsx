@@ -148,7 +148,11 @@ export function Samples() {
         )}
       </div>
 
-      <AnimatedSheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+      <AnimatedSheet
+        open={!!selected}
+        onOpenChange={(o) => !o && setSelected(null)}
+        resizeKey="sample-detail"
+      >
         {selected && <SampleDetail sample={selected} />}
       </AnimatedSheet>
     </div>

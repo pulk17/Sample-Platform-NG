@@ -12,9 +12,11 @@ import {
   promoteBaseline,
   snapshotTestsById,
   useHealth,
+  useQueue,
   useRegressionTests,
   useRunFailures,
   useRuns,
+  useSamples,
   type RunFailure,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth";
@@ -85,7 +87,10 @@ export function Triage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-3xl px-6 py-5">
+      <div className="mx-auto max-w-5xl px-6 py-5">
+        <StatStrip failingNow={failingNow} />
+
+        <SubHead>Needs triage</SubHead>
         {isLoading && (
           <div className="flex flex-col gap-3">
             {[0, 1].map((i) => (
@@ -95,9 +100,9 @@ export function Triage() {
         )}
 
         {!isLoading && failedRuns.length === 0 && (
-          <div className="flex flex-col items-center gap-3 py-24 text-center">
-            <ShieldCheck className="size-10 text-success" />
-            <div className="text-[15px] font-medium">Nothing to triage</div>
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-12 text-center">
+            <ShieldCheck className="size-8 text-success" />
+            <div className="text-[14px] font-medium">Nothing to triage</div>
             <p className="max-w-sm text-[13px] text-faint">
               No recent runs finished with failures. New ones land here automatically.
             </p>
@@ -107,8 +112,144 @@ export function Triage() {
         {failedRuns.map((fr, idx) => (
           <FailureCard key={fr.runId} {...fr} defaultOpen={idx === 0} index={idx} />
         ))}
+
+        <RecentRuns runs={runs} isLoading={isLoading} />
       </div>
     </div>
+  );
+}
+
+function SubHead({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 mt-6 text-[11px] font-semibold uppercase tracking-wider text-faint first:mt-0">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Scale-and-pressure counters across the top. Everything here comes from
+ * queries the page already needs, so the strip costs no extra requests.
+ *
+ * The failing count is the one number here that is not live: per-test
+ * results still come from the committed snapshot, because no endpoint
+ * reports them yet. It is labelled as such rather than being left to look
+ * current alongside the three that are.
+ */
+function StatStrip({ failingNow }: { failingNow: number }) {
+  const { data: tests = [] } = useRegressionTests();
+  const { data: samples = [] } = useSamples();
+  const { data: queue } = useQueue();
+
+  const active = tests.filter((t) => t.active).length;
+
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <Stat
+        label="Failing"
+        value={failingNow}
+        hint="from snapshot"
+        tone={failingNow > 0 ? "bad" : "good"}
+        to="/tests"
+      />
+      <Stat label="Active tests" value={active} hint={`${tests.length} total`} to="/tests" />
+      <Stat label="Samples" value={samples.length} to="/samples" />
+      <Stat
+        label="Queue"
+        value={queue?.meta.queue_depth ?? 0}
+        hint={queue ? `${queue.meta.running_count} running` : undefined}
+        to="/status"
+      />
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  hint,
+  tone,
+  to,
+}: {
+  label: string;
+  value: number;
+  hint?: string;
+  tone?: "good" | "bad";
+  to: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="card-hover rounded-xl border bg-card px-3.5 py-2.5 shadow-card"
+    >
+      <div className="text-[10px] font-medium uppercase tracking-wider text-faint">
+        {label}
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span
+          className={cn(
+            "text-[20px] font-semibold tabular-nums tracking-tight",
+            tone === "bad" && "text-destructive",
+            tone === "good" && "text-success",
+          )}
+        >
+          {value}
+        </span>
+        {hint && <span className="text-[11px] text-faint">{hint}</span>}
+      </div>
+    </Link>
+  );
+}
+
+/** The last handful of runs regardless of outcome — the triage cards above
+ * only show failures, which leaves the page blank on a healthy week. */
+function RecentRuns({ runs, isLoading }: { runs: LogicalRun[]; isLoading: boolean }) {
+  const recent = runs.slice(0, 8);
+  if (isLoading || recent.length === 0) return null;
+
+  return (
+    <>
+      <SubHead>Recent runs</SubHead>
+      <div className="overflow-hidden rounded-xl border bg-card shadow-card">
+        {recent.map((run) => (
+          <div
+            key={run.id}
+            className="flex items-center gap-3 border-b px-4 py-2 text-[13px] last:border-0"
+          >
+            <code className="w-24 shrink-0 truncate text-xs text-faint">
+              {run.pr_nr ? `PR #${run.pr_nr}` : run.commit}
+            </code>
+            <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
+              {run.branch}
+            </span>
+            <span className="flex shrink-0 items-center gap-1">
+              {run.platforms.map((p) => (
+                <Link
+                  key={p.run_id}
+                  to="/runs/$runId"
+                  params={{ runId: String(p.run_id) }}
+                  title={`${p.platform} · ${p.status}`}
+                  className={cn(
+                    "rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition-colors",
+                    p.status === "pass" && "border-success/30 text-success hover:bg-success/10",
+                    p.status === "fail" &&
+                      "border-destructive/30 text-destructive hover:bg-destructive/10",
+                    p.status !== "pass" &&
+                      p.status !== "fail" &&
+                      "border-border text-faint hover:bg-muted",
+                  )}
+                >
+                  {p.platform === "linux" ? "lnx" : "win"}
+                </Link>
+              ))}
+            </span>
+            <span className="w-24 shrink-0 text-right text-[11px] text-faint">
+              {run.created_at && new Date(run.created_at).toLocaleDateString()}
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

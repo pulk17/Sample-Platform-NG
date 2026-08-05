@@ -68,7 +68,7 @@ export function AppShell() {
   if (!session) return <Login onDone={() => setSession(getSession())} />;
 
   return (
-    <div className="relative flex h-screen overflow-hidden p-2">
+    <div className="relative flex h-full overflow-hidden p-2">
       {/* Rail reserves collapsed width; sidebar overlays on hover so main never reflows. */}
       <div style={{ width: COLLAPSED }} className="shrink-0" />
 

@@ -35,7 +35,7 @@ export function Login({ onDone }: { onDone: () => void }) {
   }, [dark]);
 
   return (
-    <div className="relative flex h-screen items-center justify-center bg-background">
+    <div className="relative flex h-full items-center justify-center bg-background">
       <button
         onClick={() => setDark(!dark)}
         aria-label="Toggle theme"
