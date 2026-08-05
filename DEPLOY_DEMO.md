@@ -7,8 +7,11 @@ serves static files. Uses hash routing, so no server-side rewrites are needed.
 > **Demo builds are for showcasing only.** Any credentials sign in as admin
 > and a banner says so in the UI. Never use a demo build as the starting
 > point for a production deploy — production is a plain `npm run build`
-> served behind Nginx next to the real API (`deploy/nginx.example.conf`),
-> and the committed `netlify.toml` / `vercel.json` are demo configs.
+> served behind Nginx next to the real API (`deploy/nginx.example.conf`).
+>
+> Of the committed configs, only `netlify.toml` builds the demo. `vercel.json`
+> runs a plain `npm run build` and proxies `/api/v1/*` to the live platform,
+> so a Vercel deploy is a real deploy against real data, not a demo.
 
 Build it:
 
