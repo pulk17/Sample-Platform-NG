@@ -1,33 +1,19 @@
-// Data layer. Live API calls where endpoints exist; a bundled snapshot of
-// the production database covers what the API doesn't serve yet (per-test
-// baselines, run history sparklines, failure groupings).
+// Data layer. Everything here is live: the bundled snapshot that used to
+// fill in per-test history now only backs demo mode, which patches fetch in
+// lib/demo.ts and never reaches this file.
 
 import { useQuery } from "@tanstack/react-query";
 
-import categoriesJson from "@/mocks/generated/categories.json";
-import runsSnapshotJson from "@/mocks/generated/runs.json";
-import samplesJson from "@/mocks/generated/samples.json";
-import testsJson from "@/mocks/generated/tests.json";
 import { getSession, logout } from "@/lib/auth";
 import type {
-  Category,
   LiveRun,
   LogicalRun,
   Platform,
   RegressionTest,
   RunSummary,
   Sample,
-  SnapshotRun,
   SparkResult,
 } from "@/lib/types";
-
-/* ---------------- snapshot (prod dump, June 2026) ---------------- */
-
-export const snapshotTests = testsJson as RegressionTest[];
-export const snapshotSamples = samplesJson as Sample[];
-export const categories = categoriesJson as Category[];
-export const snapshotRuns = runsSnapshotJson as unknown as SnapshotRun[];
-export const snapshotTestsById = new Map(snapshotTests.map((t) => [t.id, t]));
 
 /* ---------------- live fetch helpers ---------------- */
 
@@ -112,9 +98,86 @@ async function fetchAll<T>(path: string, cap = 500): Promise<T[]> {
 
 /* ---------------- live queries ---------------- */
 
-/** Regression tests: live list (active + inactive) + snapshot analytics by id. */
-export function useRegressionTests() {
+/** How many past runs the sparklines and the average runtime look back over. */
+const HISTORY_RUNS = 6;
+
+interface TestHistory {
+  recent_results: SparkResult[];
+  avg_runtime_ms: number | null;
+}
+
+/**
+ * Per-test result history, assembled from recent runs.
+ *
+ * There is no per-test history endpoint, but /runs/{id}/samples already
+ * returns every test's status and runtime for one run, so reading a handful
+ * of runs and transposing them costs a few requests rather than one per
+ * test. Only commit runs count: a PR run failing says something about the
+ * pull request, not about the health of the test.
+ */
+export function useTestHistory() {
+  const { data: runs = [] } = useRuns();
+  const runIds = runs
+    .filter((r) => r.test_type === "commit")
+    .slice(0, HISTORY_RUNS)
+    .flatMap((r) => r.platforms.map((p) => p.run_id))
+    .sort((a, b) => a - b);
+
   return useQuery({
+    queryKey: ["test-history", runIds],
+    enabled: runIds.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const perRun = await Promise.all(
+        runIds.map((id) => fetchAll<RunSampleRow>(`/runs/${id}/samples`, 400)),
+      );
+
+      const history = new Map<number, TestHistory>();
+      const runtimes = new Map<number, number[]>();
+      for (const rows of perRun) {
+        for (const row of rows) {
+          const entry = history.get(row.regression_test_id) ?? {
+            recent_results: [],
+            avg_runtime_ms: null,
+          };
+          // A run that skipped this test leaves a gap in the series rather
+          // than a failure, which is what customized runs produce.
+          entry.recent_results.push(
+            row.status === "pass" ? "pass" : row.status === "fail" ? "fail" : "skip",
+          );
+          history.set(row.regression_test_id, entry);
+          if (row.runtime_ms != null) {
+            runtimes.set(row.regression_test_id, [
+              ...(runtimes.get(row.regression_test_id) ?? []),
+              row.runtime_ms,
+            ]);
+          }
+        }
+      }
+      for (const [id, times] of runtimes) {
+        const entry = history.get(id);
+        if (entry && times.length > 0) {
+          entry.avg_runtime_ms =
+            times.reduce((a, b) => a + b, 0) / times.length;
+        }
+      }
+      return history;
+    },
+  });
+}
+
+interface RunSampleRow {
+  regression_test_id: number;
+  status: string;
+  runtime_ms: number | null;
+}
+
+/** Regression tests: the live list, with history and sha joined in. */
+export function useRegressionTests() {
+  const { data: history } = useTestHistory();
+  const { data: samples = [] } = useSamples();
+
+  const rows = useQuery({
     queryKey: ["regression-tests"],
     staleTime: 60_000,
     queryFn: async () => {
@@ -122,32 +185,81 @@ export function useRegressionTests() {
         fetchAll<LiveRegressionTest>("/regression-tests?active=true"),
         fetchAll<LiveRegressionTest>("/regression-tests?active=false"),
       ]);
-      const rows = [...act, ...inact].sort(
+      return [...act, ...inact].sort(
         (a, b) => a.regression_test_id - b.regression_test_id,
       );
-      return rows.map((r): RegressionTest => {
-        const snap = snapshotTestsById.get(r.regression_test_id);
-        return {
-          id: r.regression_test_id,
-          sample_id: r.sample_id,
-          sample_name: r.sample_name,
-          sample_sha: snap?.sample_sha ?? "",
-          command: r.command,
-          input_type: r.input_type,
-          output_type: r.output_type,
-          expected_rc: r.expected_rc,
-          active: r.active,
-          description: r.description ?? "",
-          categories: r.categories,
-          baselines: snap?.baselines ?? [],
-          last_passed_linux: snap?.last_passed_linux ?? null,
-          last_passed_windows: snap?.last_passed_windows ?? null,
-          avg_runtime_ms: snap?.avg_runtime_ms ?? null,
-          recent_results: snap?.recent_results ?? [],
-        };
-      });
     },
   });
+
+  const shaById = new Map(samples.map((s) => [s.id, s.sha]));
+  const data = (rows.data ?? []).map((r): RegressionTest => {
+    const past = history?.get(r.regression_test_id);
+    return {
+      id: r.regression_test_id,
+      sample_id: r.sample_id,
+      sample_name: r.sample_name,
+      sample_sha: shaById.get(r.sample_id) ?? "",
+      command: r.command,
+      input_type: r.input_type,
+      output_type: r.output_type,
+      expected_rc: r.expected_rc,
+      active: r.active,
+      description: r.description ?? "",
+      categories: r.categories,
+      avg_runtime_ms: past?.avg_runtime_ms ?? null,
+      recent_results: past?.recent_results ?? [],
+    };
+  });
+
+  return { data, isLoading: rows.isLoading };
+}
+
+/**
+ * Where a file lives, rather than the file itself.
+ *
+ * Samples and baselines are handed out as signed URLs so large transfers do
+ * not run through the API. A null download_url means the only copy is on the
+ * platform's own disk and there is nothing to link to.
+ */
+export interface StoredFile {
+  filename: string;
+  download_url: string | null;
+  storage_status: "ok" | "degraded";
+}
+
+export const sampleFile = (sampleId: number) =>
+  apiGet<StoredFile>(`/samples/${sampleId}/download`);
+
+export const baselineFile = (testId: number, outputId: number) =>
+  apiGet<StoredFile>(`/regression-tests/${testId}/outputs/${outputId}/download`);
+
+export const variantFile = (testId: number, outputId: number, variantId: number) =>
+  apiGet<StoredFile>(
+    `/regression-tests/${testId}/outputs/${outputId}/variants/${variantId}/download`,
+  );
+
+/** One test with its baselines, which the list endpoint leaves out. */
+export function useRegressionTestDetail(id: number | null) {
+  return useQuery({
+    queryKey: ["regression-test", id],
+    enabled: id !== null,
+    staleTime: 60_000,
+    queryFn: () => apiGet<RegressionTestDetail>(`/regression-tests/${id}`),
+  });
+}
+
+export interface RegressionTestOutputDetail {
+  id: number;
+  correct: string;
+  correct_extension: string;
+  expected_filename: string | null;
+  ignore: boolean;
+  variants: { id: number; hash: string }[];
+}
+
+interface RegressionTestDetail {
+  regression_test_id: number;
+  outputs: RegressionTestOutputDetail[];
 }
 
 interface LiveRegressionTest {
@@ -698,7 +810,7 @@ export async function fetchDiff(args: {
   );
 }
 
-/** Category list derived from the live test suite (no snapshot). */
+/** Category list derived from the live test suite. */
 export function deriveCategories(tests: RegressionTest[]) {
   const counts = new Map<string, number>();
   for (const t of tests) for (const c of t.categories) counts.set(c, (counts.get(c) ?? 0) + 1);
@@ -707,7 +819,7 @@ export function deriveCategories(tests: RegressionTest[]) {
     .map(([name, test_count], i) => ({ id: i + 1, name, description: "", test_count }));
 }
 
-/* ---------------- snapshot-derived analytics ---------------- */
+/* ---------------- derived from the live suite ---------------- */
 
 export function healthOf(t: RegressionTest): SparkResult {
   for (let i = t.recent_results.length - 1; i >= 0; i--) {
@@ -722,36 +834,6 @@ export function categoryHealth(name: string, tests: RegressionTest[]) {
     total: inCat.length,
     failing: inCat.filter((t) => healthOf(t) === "fail").length,
   };
-}
-
-export interface TriageGroup {
-  run: SnapshotRun;
-  platform: Platform;
-  category: string;
-  tests: RegressionTest[];
-}
-
-/** Failure groups (run × platform × category) computed from the snapshot. */
-export function triageGroups(maxRuns = 3): TriageGroup[] {
-  const out: TriageGroup[] = [];
-  for (const run of snapshotRuns.slice(0, maxRuns)) {
-    for (const p of run.platforms) {
-      if (p.new_failures === 0 || p.failing_ids.length === 0) continue;
-      const byCat = new Map<string, RegressionTest[]>();
-      for (const id of p.failing_ids) {
-        const t = snapshotTestsById.get(id);
-        if (!t) continue;
-        const cat = t.categories[0] ?? "Uncategorized";
-        byCat.set(cat, [...(byCat.get(cat) ?? []), t]);
-      }
-      for (const [category, ts] of [...byCat.entries()].sort(
-        (a, b) => b[1].length - a[1].length,
-      )) {
-        out.push({ run, platform: p.platform, category, tests: ts });
-      }
-    }
-  }
-  return out;
 }
 
 export function commandPresets(tests: RegressionTest[], limit = 6) {

@@ -10,13 +10,13 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import {
   promoteBaseline,
-  snapshotTestsById,
   useHealth,
   useQueue,
   useRegressionTests,
   useRunFailures,
   useRuns,
   useSamples,
+  useTestHistory,
   type RunFailure,
 } from "@/lib/api";
 import { getSession } from "@/lib/auth";
@@ -66,7 +66,7 @@ export function Triage() {
           <span className="ml-auto flex items-center gap-3">
             {failingNow > 0 && (
               <span className="text-[11px] text-faint">
-                {failingNow} tests red in the latest snapshot analytics
+                {failingNow} tests red in recent runs
               </span>
             )}
             {health && (
@@ -130,11 +130,6 @@ function SubHead({ children }: { children: React.ReactNode }) {
 /**
  * Scale-and-pressure counters across the top. Everything here comes from
  * queries the page already needs, so the strip costs no extra requests.
- *
- * The failing count is the one number here that is not live: per-test
- * results still come from the committed snapshot, because no endpoint
- * reports them yet. It is labelled as such rather than being left to look
- * current alongside the three that are.
  */
 function StatStrip({ failingNow }: { failingNow: number }) {
   const { data: tests = [] } = useRegressionTests();
@@ -148,7 +143,6 @@ function StatStrip({ failingNow }: { failingNow: number }) {
       <Stat
         label="Failing"
         value={failingNow}
-        hint="from snapshot"
         tone={failingNow > 0 ? "bad" : "good"}
         to="/tests"
       />
@@ -380,7 +374,9 @@ function FailureRow({ f, runId }: { f: RunFailure; runId: number }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [diff, setDiff] = useState<DiffTarget | null>(null);
-  const snap = snapshotTestsById.get(f.regression_test_id);
+  // Shares the query the tests list already made, so this costs no fetch.
+  const { data: history } = useTestHistory();
+  const past = history?.get(f.regression_test_id);
   const output = f.outputs.find((o) => o.status === "fail") ?? f.outputs[0];
 
   const doPromote = async () => {
@@ -407,7 +403,9 @@ function FailureRow({ f, runId }: { f: RunFailure; runId: number }) {
         <code className="w-12 shrink-0 text-xs text-faint">#{f.regression_test_id}</code>
         <code className="min-w-0 flex-1 truncate text-xs text-foreground/85">{f.command}</code>
         <span className="w-32 shrink-0 truncate text-[11px] text-faint">{f.sample_name}</span>
-        {snap && <Sparkline results={snap.recent_results.filter((r) => r !== "skip").slice(-10)} />}
+        {past && (
+          <Sparkline results={past.recent_results.filter((r) => r !== "skip").slice(-10)} />
+        )}
       </Link>
 
       {result && <span className="shrink-0 text-[11px] text-faint">{result}</span>}

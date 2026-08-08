@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Copy, FileVideo, Search } from "lucide-react";
+import { Copy, Download, FileVideo, Loader2, Search } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 
@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { AnimatedSheet, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import {
+  sampleFile,
   useRegressionTests,
   useSampleDetails,
   useSampleHistory,
@@ -187,12 +188,15 @@ function SampleDetail({ sample }: { sample: Sample }) {
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       <div className="border-b px-6 py-4">
-        <SheetTitle className="truncate text-[15px] font-semibold tracking-tight">
+        <SheetTitle className="truncate pr-8 text-[15px] font-semibold tracking-tight">
           {sample.original_name}
         </SheetTitle>
-        <SheetDescription className="mt-0.5 text-[11px] text-faint">
-          Sample #{sample.id} · {sample.extension}
-        </SheetDescription>
+        <div className="mt-0.5 flex items-center gap-2">
+          <SheetDescription className="text-[11px] text-faint">
+            Sample #{sample.id} · {sample.extension}
+          </SheetDescription>
+          <SampleDownload sampleId={sample.id} />
+        </div>
       </div>
 
       <div className="flex flex-col gap-5 px-6 py-5">
@@ -347,6 +351,47 @@ function SampleDetail({ sample }: { sample: Sample }) {
         </section>
       </div>
     </div>
+  );
+}
+
+/**
+ * Resolves the sample's signed URL on click and follows it.
+ *
+ * Samples are gigabytes, so the API answers with a location instead of the
+ * bytes. Where the only copy is on the platform's own disk there is no URL
+ * to follow and the button says so.
+ */
+function SampleDownload({ sampleId }: { sampleId: number }) {
+  const [state, setState] = useState<"idle" | "busy" | "unavailable">("idle");
+
+  const go = async () => {
+    setState("busy");
+    try {
+      const file = await sampleFile(sampleId);
+      if (!file.download_url) {
+        setState("unavailable");
+        return;
+      }
+      window.open(file.download_url, "_blank", "noopener");
+      setState("idle");
+    } catch {
+      setState("unavailable");
+    }
+  };
+
+  return (
+    <button
+      onClick={go}
+      disabled={state !== "idle"}
+      className="flex cursor-pointer items-center gap-1 text-[11px] font-medium text-primary hover:underline disabled:cursor-default disabled:text-faint disabled:no-underline"
+    >
+      {state === "busy" ? (
+        <Loader2 className="size-3 animate-spin" />
+      ) : (
+        <Download className="size-3" />
+      )}
+      {state === "unavailable" ? "on server only" : "download"}
+    </button>
   );
 }
 

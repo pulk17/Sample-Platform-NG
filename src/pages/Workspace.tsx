@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { Copy, FileVideo, FlaskConical, Loader2, Lock, Search } from "lucide-react";
+import { Copy, Download, FileVideo, FlaskConical, Loader2, Lock, Search } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 
@@ -9,12 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import {
+  baselineFile,
   categoryHealth,
   deriveCategories,
   healthOf,
   updateRegressionTest,
+  useRegressionTestDetail,
   useRegressionTests,
   useSampleHistory,
+  variantFile,
+  type StoredFile,
 } from "@/lib/api";
 import type { Platform, SparkResult } from "@/lib/types";
 import { useResizableWidth } from "@/components/ResizeHandle";
@@ -24,9 +28,10 @@ import type { RegressionTest } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
- * Regression tests: category rail → test list → detail panel. The list is
- * live; baseline hashes come from the bundled snapshot since the API has no
- * per-test detail endpoint yet. Editing needs admin or contributor.
+ * Regression tests: category rail, test list, detail panel. Baselines are
+ * fetched per test rather than with the list, which is how the API splits
+ * them: outputs multiply the payload for every row. Editing needs admin or
+ * contributor.
  */
 export function Workspace() {
   const { data: tests = [], isLoading } = useRegressionTests();
@@ -213,6 +218,8 @@ function Detail({ test }: { test: RegressionTest }) {
   const editable = canManage(getSession());
   const qc = useQueryClient();
   const { data: history = [] } = useSampleHistory(test.sample_id);
+  const { data: detail } = useRegressionTestDetail(test.id);
+  const outputs = detail?.outputs ?? [];
   const [command, setCommand] = useState(test.command);
   const [description, setDescription] = useState(test.description);
   const [saving, setSaving] = useState(false);
@@ -435,23 +442,33 @@ function Detail({ test }: { test: RegressionTest }) {
           </div>
         </section>
 
-        {test.baselines.length > 0 && (
+        {outputs.length > 0 && (
           <section>
             <SectionLabel>Baselines</SectionLabel>
             <div className="flex flex-col gap-2">
-              {test.baselines.map((b) => (
-                <div key={b.id} className="rounded-xl border p-3 shadow-card">
+              {outputs.map((o) => (
+                <div key={o.id} className="rounded-xl border p-3 shadow-card">
                   <div className="flex items-center gap-2">
                     <Badge variant="accent">original</Badge>
-                    <code className="text-xs">{(b.hash ?? "").slice(0, 28)}…{b.extension}</code>
-                    {b.ignore && <Badge variant="secondary">ignored</Badge>}
-                    <CopyHash hash={`${b.hash ?? ""}${b.extension}`} />
+                    <code className="text-xs">
+                      {o.correct.slice(0, 28)}…{o.correct_extension}
+                    </code>
+                    {o.ignore && <Badge variant="secondary">ignored</Badge>}
+                    <DownloadFile
+                      className="ml-auto"
+                      locate={() => baselineFile(test.id, o.id)}
+                    />
                   </div>
-                  {b.variants.map((v, i) => (
-                    <div key={i} className="mt-2 flex items-center gap-2 border-t pt-2">
+                  {o.variants.map((v, i) => (
+                    <div key={v.id} className="mt-2 flex items-center gap-2 border-t pt-2">
                       <Badge variant="secondary">variant {i + 1}</Badge>
-                      <code className="text-xs text-muted-foreground">{v.slice(0, 28)}…</code>
-                      <CopyHash hash={`${v}${b.extension}`} />
+                      <code className="text-xs text-muted-foreground">
+                        {v.hash.slice(0, 28)}…
+                      </code>
+                      <DownloadFile
+                        className="ml-auto"
+                        locate={() => variantFile(test.id, o.id, v.id)}
+                      />
                     </div>
                   ))}
                 </div>
@@ -475,28 +492,47 @@ function Detail({ test }: { test: RegressionTest }) {
 }
 
 /**
- * Copies a baseline's filename in the sample repository.
+ * Download button for a file the API locates rather than serves.
  *
- * Downloading these would need an API route that serves a regression test's
- * expected output; the only download endpoints today are per-run artifacts,
- * which address the same file through a run that used it rather than through
- * the test. Until that exists, the filename is what makes the file findable.
+ * The endpoint answers with a signed URL, so the click has to resolve that
+ * first and then follow it. When the only copy is on the platform's own disk
+ * there is no URL to follow, which the button reports rather than failing
+ * silently.
  */
-function CopyHash({ hash }: { hash: string }) {
-  const [copied, setCopied] = useState(false);
+function DownloadFile({
+  locate,
+  className,
+}: {
+  locate: () => Promise<StoredFile>;
+  className?: string;
+}) {
+  const [state, setState] = useState<"idle" | "busy" | "unavailable">("idle");
+
+  const go = async () => {
+    setState("busy");
+    try {
+      const file = await locate();
+      if (!file.download_url) {
+        setState("unavailable");
+        return;
+      }
+      window.open(file.download_url, "_blank", "noopener");
+      setState("idle");
+    } catch {
+      setState("unavailable");
+    }
+  };
+
   return (
     <Button
       variant="ghost"
       size="sm"
-      className="ml-auto"
-      title={`Copy ${hash}`}
-      onClick={() => {
-        navigator.clipboard.writeText(hash);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }}
+      className={className}
+      disabled={state === "busy"}
+      onClick={go}
     >
-      <Copy /> {copied ? "copied" : "copy name"}
+      {state === "busy" ? <Loader2 className="animate-spin" /> : <Download />}
+      {state === "unavailable" ? "on server only" : "download"}
     </Button>
   );
 }

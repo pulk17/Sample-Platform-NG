@@ -28,15 +28,6 @@ export interface Category {
   test_count: number;
 }
 
-export interface Baseline {
-  id: number;
-  hash: string;
-  extension: string;
-  ignore: boolean;
-  /** Alternative accepted output hashes ("variants"). */
-  variants: string[];
-}
-
 export interface RegressionTest {
   id: number;
   sample_id: number;
@@ -49,11 +40,8 @@ export interface RegressionTest {
   active: boolean;
   description: string;
   categories: string[];
-  baselines: Baseline[];
-  last_passed_linux: number | null;
-  last_passed_windows: number | null;
   avg_runtime_ms: number | null;
-  /** Last 20 logical runs, oldest first. */
+  /** Recent runs, oldest first. Baselines come from the detail endpoint. */
   recent_results: SparkResult[];
 }
 
