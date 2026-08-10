@@ -127,6 +127,18 @@ const demoOutputs = new Map(
   ]),
 );
 
+// Files uploaded alongside a sample. Only a few samples carry one on the
+// real platform, so give them to every fourth one rather than all.
+let nextExtraId = 1;
+const demoExtraFiles = new Map(
+  samples.map((s) => [
+    s.id,
+    s.id % 4 === 0
+      ? [{ id: nextExtraId++, original_name: `${s.original_name}_reference`, extension: "srt" }]
+      : [],
+  ]),
+);
+
 /** Stable stand-in hash so an upload looks like the real thing. */
 function fakeSha(seed: string): string {
   let h = 0;
@@ -394,6 +406,15 @@ function route(path: string, method: string, body: unknown): Response {
     }
   }
 
+  if (seg[0] === "samples" && seg[2] === "extra-files" && method === "DELETE") {
+    const list = demoExtraFiles.get(Number(p(1))) ?? [];
+    const id = Number(seg[3]);
+    const at = list.findIndex((f) => f.id === id);
+    if (at < 0) return ERR(404, `Extra file ${id} not found on sample ${p(1)}.`);
+    list.splice(at, 1);
+    return OK({ id, deleted: true });
+  }
+
   // ---- sample edits ----
   if (seg[0] === "samples" && seg.length === 2 && method === "PATCH") {
     const s = sampleById.get(Number(p(1)));
@@ -577,7 +598,7 @@ function route(path: string, method: string, body: unknown): Response {
         notes: s.id % 4 === 0 ? "Gets cut off after 40 minutes" : "",
         version: "0.94", version_released: "2020-08-16",
       },
-      extra_files: [],
+      extra_files: demoExtraFiles.get(s.id) ?? [],
       media_info: mediaInfoFor(s),
     });
   }

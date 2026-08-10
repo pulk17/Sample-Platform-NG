@@ -127,7 +127,7 @@ function ProfileSection({ name, email }: { name: string; email: string }) {
           >
             {busy && <Loader2 className="animate-spin" />} Save profile
           </Button>
-          {saved && <span className="text-[11px] text-success">Saved.</span>}
+          {saved && !dirty && <span className="text-[11px] text-success">Saved.</span>}
           {error && <span className="text-[11px] text-destructive">{error}</span>}
         </div>
       </div>
@@ -205,7 +205,7 @@ function PasswordSection() {
           {mismatch && (
             <span className="text-[11px] text-destructive">The two do not match.</span>
           )}
-          {done && (
+          {done && !current && !next && (
             <span className="text-[11px] text-success">
               Password changed. This session stays signed in.
             </span>

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { AnimatedSheet, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { getSession } from "@/lib/auth";
 import {
+  deleteExtraFile,
   deleteSample,
   extraFile,
   mediaInfoFile,
@@ -257,11 +258,13 @@ function SampleDetail({ sample }: { sample: Sample }) {
           <div className="mt-3 flex flex-wrap items-center gap-3 border-t pt-3">
             <FileLink label="media info" locate={() => mediaInfoFile(sample.id)} />
             {(details?.extra_files ?? []).map((x) => (
-              <FileLink
-                key={x.id}
-                label={x.original_name}
-                locate={() => extraFile(sample.id, x.id)}
-              />
+              <span key={x.id} className="flex items-center gap-1">
+                <FileLink
+                  label={x.original_name}
+                  locate={() => extraFile(sample.id, x.id)}
+                />
+                {admin && <RemoveExtraFile sampleId={sample.id} extraId={x.id} />}
+              </span>
             ))}
             {admin && <span className="ml-auto"><DeleteSample sample={sample} /></span>}
           </div>
@@ -600,6 +603,38 @@ function DeleteSample({ sample }: { sample: Sample }) {
         onConfirm={go}
       />
     </>
+  );
+}
+
+/**
+ * Drops one of the files uploaded alongside a sample.
+ *
+ * No confirm dialog: unlike deleting the sample this loses a single
+ * accompanying file, and the classic page removes it on one click too.
+ */
+function RemoveExtraFile({ sampleId, extraId }: { sampleId: number; extraId: number }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+
+  const go = async () => {
+    setBusy(true);
+    try {
+      await deleteExtraFile(sampleId, extraId);
+      await qc.invalidateQueries({ queryKey: ["sample-details", sampleId] });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={go}
+      disabled={busy}
+      title="Delete this file"
+      className="cursor-pointer text-[11px] text-faint hover:text-destructive disabled:opacity-50"
+    >
+      {busy ? <Loader2 className="size-3 animate-spin" /> : "×"}
+    </button>
   );
 }
 
