@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { Copy, Download, FileVideo, FlaskConical, Loader2, Lock, Search } from "lucide-react";
+import { Copy, Download, FileVideo, FlaskConical, Loader2, Lock, Plus, Search, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 
@@ -11,6 +11,8 @@ import { Input, Textarea } from "@/components/ui/input";
 import {
   baselineFile,
   categoryHealth,
+  createVariant,
+  deleteVariant,
   deriveCategories,
   healthOf,
   updateRegressionTest,
@@ -469,8 +471,12 @@ function Detail({ test }: { test: RegressionTest }) {
                         className="ml-auto"
                         locate={() => variantFile(test.id, o.id, v.id)}
                       />
+                      {editable && (
+                        <RemoveVariant testId={test.id} outputId={o.id} variantId={v.id} />
+                      )}
                     </div>
                   ))}
+                  {editable && <AddVariant testId={test.id} outputId={o.id} />}
                 </div>
               ))}
             </div>
@@ -488,6 +494,89 @@ function Detail({ test }: { test: RegressionTest }) {
         </section>
       </div>
     </motion.div>
+  );
+}
+
+/**
+ * Accept one more output hash for a baseline.
+ *
+ * A test can legitimately produce different bytes on a different platform or
+ * CCExtractor build. Recording that hash lets those runs pass without moving
+ * the baseline everyone else is compared against.
+ */
+function AddVariant({ testId, outputId }: { testId: number; outputId: number }) {
+  const qc = useQueryClient();
+  const [hash, setHash] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const add = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await createVariant(testId, outputId, hash);
+      await qc.invalidateQueries({ queryKey: ["regression-test", testId] });
+      setHash("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That did not work.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 border-t pt-2">
+      <div className="flex items-center gap-2">
+        {/* The hash is joined to the baseline's extension to name a file on
+            disk, so the API only accepts letters and digits. */}
+        <input
+          value={hash}
+          onChange={(e) => setHash(e.target.value.replace(/[^a-z0-9]/gi, ""))}
+          placeholder="accept another output hash"
+          className="h-7 flex-1 rounded-md border bg-card px-2 font-mono text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <Button size="sm" variant="secondary" disabled={busy || !hash} onClick={add}>
+          {busy ? <Loader2 className="animate-spin" /> : <Plus />} Add variant
+        </Button>
+      </div>
+      {error && <div className="mt-1 text-[11px] text-destructive">{error}</div>}
+    </div>
+  );
+}
+
+function RemoveVariant({
+  testId,
+  outputId,
+  variantId,
+}: {
+  testId: number;
+  outputId: number;
+  variantId: number;
+}) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+
+  const go = async () => {
+    setBusy(true);
+    try {
+      await deleteVariant(testId, outputId, variantId);
+      await qc.invalidateQueries({ queryKey: ["regression-test", testId] });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="text-destructive"
+      title="Stop accepting this output"
+      disabled={busy}
+      onClick={go}
+    >
+      {busy ? <Loader2 className="animate-spin" /> : <Trash2 />}
+    </Button>
   );
 }
 

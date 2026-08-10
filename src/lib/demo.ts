@@ -109,6 +109,24 @@ const demoTags = [
 ];
 const demoAccount = { name: "Carlos Fernandez", email: "carlos@ccextractor.org" };
 
+// Baselines get edited here (variants added and dropped), so keep a mutable
+// copy in the API's own shape instead of reading the snapshot every time.
+// The snapshot stores variants as bare hashes; the API addresses them by id.
+let nextVariantId = 1;
+const demoOutputs = new Map(
+  tests.map((t) => [
+    t.id,
+    t.baselines.map((b) => ({
+      id: b.id,
+      correct: b.hash,
+      correct_extension: b.extension,
+      expected_filename: null as string | null,
+      ignore: b.ignore,
+      variants: b.variants.map((hash) => ({ id: nextVariantId++, hash })),
+    })),
+  ]),
+);
+
 /** Stable stand-in hash so an upload looks like the real thing. */
 function fakeSha(seed: string): string {
   let h = 0;
@@ -355,9 +373,25 @@ function route(path: string, method: string, body: unknown): Response {
 
   // ---- baseline variants ----
   if (seg[0] === "regression-tests" && seg.includes("variants")) {
-    if (method === "POST")
-      return OK({ id: Date.now(), hash: (body as { hash?: string })?.hash ?? "" }, 201);
-    if (method === "DELETE") return OK({ id: Number(seg[seg.length - 1]), deleted: true });
+    const output = (demoOutputs.get(Number(p(1))) ?? []).find(
+      (o) => o.id === Number(seg[3]),
+    );
+    if (!output) return ERR(404, `Output ${seg[3]} not found.`);
+    if (method === "POST") {
+      const hash = (body as { hash?: string })?.hash ?? "";
+      if (output.variants.some((v) => v.hash === hash))
+        return ERR(409, `Output ${output.id} already accepts ${hash}.`);
+      const variant = { id: nextVariantId++, hash };
+      output.variants.push(variant);
+      return OK(variant, 201);
+    }
+    if (method === "DELETE") {
+      const id = Number(seg[seg.length - 1]);
+      const at = output.variants.findIndex((v) => v.id === id);
+      if (at < 0) return ERR(404, `Variant ${id} not found on output ${output.id}.`);
+      output.variants.splice(at, 1);
+      return OK({ id, deleted: true });
+    }
   }
 
   // ---- sample edits ----
@@ -507,6 +541,16 @@ function route(path: string, method: string, body: unknown): Response {
       expected_rc: t.expected_rc, active: t.active, categories: t.categories, description: t.description,
     }));
     return OK(paginate(rows, limit, offset));
+  }
+  if (seg[0] === "regression-tests" && seg.length === 2 && method === "GET") {
+    const t = testById.get(Number(p(1)));
+    if (!t) return ERR(404, `Regression test ${p(1)} not found.`);
+    return OK({
+      regression_test_id: t.id, sample_id: t.sample_id, sample_name: t.sample_name,
+      command: t.command, input_type: t.input_type, output_type: t.output_type,
+      expected_rc: t.expected_rc, active: t.active, categories: t.categories,
+      description: t.description, outputs: demoOutputs.get(t.id) ?? [],
+    });
   }
   if (seg[0] === "regression-tests" && (method === "POST" || method === "PATCH"))
     return OK({ regression_test_id: 9001, ...(body as object) });
