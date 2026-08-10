@@ -388,7 +388,7 @@ function route(path: string, method: string, body: unknown): Response {
       expires_at: new Date(Date.now() + 7 * 864e5).toISOString(),
       scopes: ["runs:read", "runs:write", "system:read", "baselines:write", "results:read", "tokens:manage"] }, 201);
   if (seg[0] === "auth" && seg[1] === "me")
-    return OK({ user_id: 1, name: "Carlos Fernandez", email: "carlos@ccextractor.org", role: "admin",
+    return OK({ user_id: 1, name: demoAccount.name, email: demoAccount.email, role: "admin",
       scopes: ["runs:read", "runs:write", "system:read", "baselines:write", "results:read", "tokens:manage"] });
   if (seg[0] === "auth" && seg[1] === "tokens" && method === "GET")
     return OK(paginate([

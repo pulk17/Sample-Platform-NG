@@ -965,6 +965,28 @@ export const deleteVariant = (testId: number, outputId: number, variantId: numbe
 
 /* ---------------- account ---------------- */
 
+export interface Me {
+  user_id: number;
+  name: string;
+  email: string;
+  role: PlatformUser["role"];
+  scopes: string[];
+}
+
+/**
+ * The account behind the current token.
+ *
+ * The stored session only keeps the email that was typed at sign-in, so
+ * anything that edits the account has to read the server's copy instead.
+ */
+export function useMe() {
+  return useQuery({
+    queryKey: ["me"],
+    staleTime: 300_000,
+    queryFn: () => apiGet<Me>("/auth/me"),
+  });
+}
+
 export const updateAccount = (patch: {
   name?: string;
   email?: string;

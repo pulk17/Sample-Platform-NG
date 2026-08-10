@@ -17,7 +17,7 @@ import { useEffect, useState } from "react";
 
 import { CommandPalette } from "@/components/CommandPalette";
 import { Login } from "@/components/Login";
-import { getSession, logout } from "@/lib/auth";
+import { SESSION_CHANGED, getSession, logout } from "@/lib/auth";
 import { DEMO } from "@/lib/demo";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +64,14 @@ export function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [session, setSession] = useState(getSession);
   const [open, setOpen] = useState(false);
+
+  // The account page can change the email shown here, so pick the stored
+  // session back up instead of leaving the corner reading the old one.
+  useEffect(() => {
+    const sync = () => setSession(getSession());
+    window.addEventListener(SESSION_CHANGED, sync);
+    return () => window.removeEventListener(SESSION_CHANGED, sync);
+  }, []);
 
   if (!session) return <Login onDone={() => setSession(getSession())} />;
 
@@ -161,23 +169,31 @@ export function AppShell() {
         </nav>
 
         <div className="flex items-center gap-2 px-2.5 py-2">
-          <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-semibold uppercase text-accent-foreground">
-            {session.email.slice(0, 2)}
-          </div>
-          {open && (
-            <>
+          {/* The whole identity block is the way to the account page — the
+              classic site puts it behind the same name in the corner. */}
+          <Link
+            to="/account"
+            title="Your account"
+            className="flex min-w-0 flex-1 items-center gap-2 transition-opacity hover:opacity-75"
+          >
+            <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-semibold uppercase text-accent-foreground">
+              {session.email.slice(0, 2)}
+            </div>
+            {open && (
               <div className="min-w-0 leading-tight">
                 <div className="truncate text-xs font-medium">{session.email}</div>
                 <div className="text-[10px] capitalize text-faint">{session.role}</div>
               </div>
-              <button
-                onClick={logout}
-                title="Sign out"
-                className="ml-auto cursor-pointer rounded-md p-1.5 text-faint transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <LogOut className="size-3.5" />
-              </button>
-            </>
+            )}
+          </Link>
+          {open && (
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="cursor-pointer rounded-md p-1.5 text-faint transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <LogOut className="size-3.5" />
+            </button>
           )}
         </div>
       </motion.aside>

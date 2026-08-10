@@ -7,6 +7,7 @@ import {
 
 import { DEMO } from "@/lib/demo";
 import { AppShell } from "@/components/layout/AppShell";
+import { Account } from "@/pages/Account";
 import { Admin } from "@/pages/Admin";
 import { RunDetail } from "@/pages/RunDetail";
 import { RunNew } from "@/pages/RunNew";
@@ -101,6 +102,12 @@ const statusRoute = createRoute({
   component: Status,
 });
 
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/account",
+  component: Account,
+});
+
 const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/admin",
@@ -121,6 +128,7 @@ const routeTree = rootRoute.addChildren([
   uploadRoute,
   samplesRoute,
   statusRoute,
+  accountRoute,
   adminRoute,
 ]);
 

@@ -129,6 +129,17 @@ export async function login(email: string, password: string): Promise<Session> {
   return session;
 }
 
+/** Fired when the stored session changes under a mounted shell. */
+export const SESSION_CHANGED = "sp-session-changed";
+
+/** Keep the cached session in step once the account's email changes. */
+export function setSessionEmail(email: string) {
+  const s = getSession();
+  if (!s) return;
+  localStorage.setItem(KEY, JSON.stringify({ ...s, email }));
+  window.dispatchEvent(new Event(SESSION_CHANGED));
+}
+
 let loggingOut = false;
 
 export function logout() {

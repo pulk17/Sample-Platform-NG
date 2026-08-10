@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Ban, FileX, FolderTree, KeyRound, ListOrdered, Plus, Trash2, Users, Wrench } from "lucide-react";
+import { Ban, FileX, FolderTree, KeyRound, ListOrdered, Mail, Plus, Tags, Trash2, UserX, Users, Wrench } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 
@@ -12,10 +12,13 @@ import {
   allowExtension,
   blockUser,
   createCategory,
+  createTag,
+  deactivateUser,
   deleteCategory,
   forbidExtension,
   renameCategory,
   revokeToken,
+  sendUserReset,
   setMaintenance,
   unblockUser,
   updateUserRole,
@@ -24,6 +27,7 @@ import {
   useForbiddenExtensions,
   useMaintenance,
   useQueue,
+  useTags,
   useTokens,
   useUsers,
   type PlatformUser,
@@ -67,6 +71,7 @@ export function Admin() {
 
         <UserSection />
         <CategorySection />
+        <TagSection />
         <MaintenanceSection />
         <BlockedUsersSection />
         <ForbiddenSection />
@@ -369,24 +374,102 @@ function CategorySection() {
   );
 }
 
+function TagSection() {
+  const { data: tags = [] } = useTags();
+  const { run, busy, err } = useMutate("tags");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  const add = () =>
+    run(async () => {
+      await createTag(name.trim(), description.trim());
+      setName("");
+      setDescription("");
+    });
+
+  return (
+    <section>
+      <SectionLabel>
+        <Tags className="mr-1 inline size-3.5" /> Sample tags
+        <span className="ml-2 font-normal normal-case">{tags.length}</span>
+      </SectionLabel>
+      <ErrorLine msg={err} />
+      <div className="overflow-hidden rounded-xl border shadow-card">
+        {tags.map((t) => (
+          <div
+            key={t.id}
+            className="flex items-center gap-3 border-b bg-card px-4 py-2 text-[13px] last:border-0"
+          >
+            <span className="font-medium">{t.name}</span>
+            <span className="min-w-0 flex-1 truncate text-[11px] text-faint">
+              {t.description || "no description"}
+            </span>
+          </div>
+        ))}
+        {/* Created here, applied to samples on the samples page. There is no
+            removal: the classic site has no way to drop a tag either. */}
+        <div className="flex items-center gap-2 bg-muted/30 px-3 py-2">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="tag name"
+            className="h-7 w-40 rounded-md border bg-card px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="what it means"
+            className="h-7 flex-1 rounded-md border bg-card px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <Button size="sm" variant="secondary" disabled={busy || !name.trim()} onClick={add}>
+            <Plus /> Add
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function UserSection() {
   const { data: users = [], isLoading } = useUsers();
   const qc = useQueryClient();
   const me = getSession();
   const [busy, setBusy] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [sentTo, setSentTo] = useState<number | null>(null);
+  const [closing, setClosing] = useState<PlatformUser | null>(null);
 
-  const changeRole = async (u: PlatformUser, role: string) => {
+  // One runner for all three row actions: they share the per-row busy flag
+  // and only the successful ones differ in what they leave behind.
+  const act = async (u: PlatformUser, what: string, fn: () => Promise<unknown>) => {
     setBusy(u.user_id);
     setErr(null);
     try {
-      await updateUserRole(u.user_id, role);
+      await fn();
       await qc.invalidateQueries({ queryKey: ["users"] });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Role change failed");
+      setErr(e instanceof Error ? e.message : `${what} failed`);
+      return false;
     } finally {
       setBusy(null);
     }
+    return true;
+  };
+
+  const changeRole = (u: PlatformUser, role: string) =>
+    act(u, "Role change", () => updateUserRole(u.user_id, role));
+
+  const sendReset = async (u: PlatformUser) => {
+    setSentTo(null);
+    if (await act(u, "Sending the reset link", () => sendUserReset(u.user_id))) {
+      setSentTo(u.user_id);
+    }
+  };
+
+  const deactivate = async () => {
+    if (!closing) return;
+    await act(closing, "Deactivation", () => deactivateUser(closing.user_id));
+    setClosing(null);
   };
 
   return (
@@ -415,7 +498,32 @@ function UserSection() {
                 </div>
                 <div className="truncate text-[11px] text-faint">{u.email}</div>
               </div>
+              {sentTo === u.user_id && (
+                <span className="text-[11px] text-success">reset link sent</span>
+              )}
               {u.github_linked && <Badge variant="secondary">github</Badge>}
+              <Button
+                variant="ghost"
+                size="sm"
+                title="Email a password reset link to this account"
+                disabled={busy === u.user_id}
+                onClick={() => sendReset(u)}
+              >
+                <Mail />
+              </Button>
+              {/* Deactivating scrubs the name, email and password, so it is
+                  a confirm; your own account is closed from the account page
+                  instead, which signs you out afterwards. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                title={self ? "Close your own account from the account page" : "Deactivate this account"}
+                disabled={self || busy === u.user_id}
+                onClick={() => setClosing(u)}
+              >
+                <UserX />
+              </Button>
               <select
                 value={u.role}
                 disabled={self || busy === u.user_id}
@@ -434,6 +542,23 @@ function UserSection() {
           );
         })}
       </div>
+
+      <ConfirmDialog
+        open={closing !== null}
+        onOpenChange={(o) => !o && setClosing(null)}
+        title={`Deactivate ${closing?.name}?`}
+        body={
+          <>
+            The name and email are replaced with a placeholder and the password is
+            scrambled, so nobody can sign in as {closing?.email} again. The account row
+            stays behind so their samples and runs keep an author.{" "}
+            <b>This cannot be undone.</b>
+          </>
+        }
+        confirmLabel={busy !== null ? "Deactivating…" : "Deactivate account"}
+        busy={busy !== null}
+        onConfirm={deactivate}
+      />
     </section>
   );
 }
