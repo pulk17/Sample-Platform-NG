@@ -14,6 +14,7 @@ import {
   GitCommitHorizontal,
   GitPullRequest,
   Loader2,
+  RotateCcw,
   Terminal,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -25,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import {
   cancelRun,
+  restartRun,
   fetchRunLog,
   useInfraErrors,
   useRun,
@@ -68,6 +70,23 @@ export function RunDetail() {
     !run || ["pass", "fail", "canceled", "error"].includes(run.status);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+
+  const doRestart = async () => {
+    setRestarting(true);
+    try {
+      await restartRun(id);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["run", id] }),
+        qc.invalidateQueries({ queryKey: ["run-progress", id] }),
+        qc.invalidateQueries({ queryKey: ["runs"] }),
+      ]);
+    } finally {
+      setRestarting(false);
+      setConfirmRestart(false);
+    }
+  };
 
   const doCancel = async () => {
     setCanceling(true);
@@ -115,6 +134,11 @@ export function RunDetail() {
                 <Ban /> Cancel run
               </Button>
             )}
+            {finished && canOperateCi(getSession()) && (
+              <Button size="sm" variant="outline" onClick={() => setConfirmRestart(true)}>
+                <RotateCcw /> Run again
+              </Button>
+            )}
             {gh && (
               <a href={gh} target="_blank" rel="noreferrer">
                 <Button size="sm" variant="secondary">
@@ -125,6 +149,22 @@ export function RunDetail() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmRestart}
+        onOpenChange={setConfirmRestart}
+        title={`Run ${id} again?`}
+        body={
+          <>
+            The results and the progress trail for this run are cleared so CI
+            picks it up again. The run keeps its id, and{" "}
+            <b>the existing results are replaced, not kept alongside</b>.
+          </>
+        }
+        confirmLabel={restarting ? "Queueing…" : "Run again"}
+        busy={restarting}
+        onConfirm={doRestart}
+      />
 
       <ConfirmDialog
         open={confirmCancel}

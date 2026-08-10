@@ -1,10 +1,23 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, FileVideo, Loader2, UploadCloud, XCircle } from "lucide-react";
 import { motion } from "motion/react";
 import { useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useSamples } from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import {
+  discardUpload,
+  finalizeUpload,
+  linkUpload,
+  uploadSample,
+  useAbout,
+  useFtpCredentials,
+  useQueuedSamples,
+  useSamples,
+  type QueuedSample,
+} from "@/lib/api";
+import type { Platform } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface Picked {
@@ -20,17 +33,45 @@ interface Picked {
 const HASH_LIMIT = 1024 ** 3; // 1 GiB
 
 /**
- * Sample upload. Files are hashed in the browser and checked against the
- * library before any bytes are transferred, so duplicates get caught up
- * front instead of after a multi-gigabyte upload. The transfer itself still
- * goes through the existing FTP/HTTP pipeline until the API grows an upload
- * endpoint, so the submit button stays disabled.
+ * Sample upload, in the two steps the platform actually works in: the bytes
+ * go into a queue first, and the description that turns a queued file into
+ * a sample follows separately.
+ *
+ * Files are hashed in the browser and checked against the library before
+ * any transfer, so a duplicate is caught up front rather than after a
+ * multi-gigabyte upload. The server checks again on arrival, since another
+ * upload can land in between.
  */
 export function Upload() {
   const { data: samples = [] } = useSamples();
+  const qc = useQueryClient();
   const [items, setItems] = useState<Picked[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Too big to hash in the browser still uploads: the server hashes it and
+  // rejects a duplicate there, which is the check that actually counts.
+  const ready = items.filter(
+    (it) => !it.duplicateOf && (it.sha !== null || it.tooLarge),
+  );
+
+  const sendAll = async () => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      for (const item of ready) {
+        await uploadSample(item.file);
+        setItems((prev) => prev.filter((it) => it.file !== item.file));
+      }
+      await qc.invalidateQueries({ queryKey: ["queued-samples"] });
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const addFiles = async (files: FileList | File[]) => {
     for (const file of Array.from(files)) {
@@ -135,18 +176,259 @@ export function Upload() {
           ))}
         </div>
 
-        {items.some((it) => it.sha && !it.duplicateOf) && (
-          <div className="mt-4 flex items-center justify-between rounded-xl border border-dashed bg-muted/30 p-4">
-            <span className="text-[12px] text-faint">
-              Direct upload isn't available yet — transfer new samples through the
-              existing FTP/HTTP flow for now.
-            </span>
-            <Button disabled title="Upload API not available yet">
-              Upload
+        {ready.length > 0 && (
+          <div className="mt-4 flex items-center justify-between rounded-xl border bg-card p-4 shadow-card">
+            <div className="text-[12px] text-faint">
+              {ready.length} file{ready.length > 1 ? "s" : ""} ready.
+              {uploadError && (
+                <span className="ml-2 text-destructive">{uploadError}</span>
+              )}
+            </div>
+            <Button size="sm" disabled={uploading} onClick={sendAll}>
+              {uploading ? <Loader2 className="animate-spin" /> : <UploadCloud />}
+              {uploading ? "Uploading" : "Upload to queue"}
             </Button>
           </div>
         )}
+
+        <UploadQueue />
+
+        <FtpPanel />
       </div>
+    </div>
+  );
+}
+
+/**
+ * The queue between an upload and a sample.
+ *
+ * Each row can go three ways: describe it into a new sample, attach it to
+ * one that already exists, or throw it away. Describing needs a CCExtractor
+ * version, which is why the platform splits this from the transfer at all.
+ */
+function UploadQueue() {
+  const { data: queued = [], isLoading } = useQueuedSamples();
+  const [active, setActive] = useState<number | null>(null);
+
+  if (isLoading || queued.length === 0) return null;
+
+  return (
+    <section className="mt-8">
+      <SectionLabel>In the queue · {queued.length}</SectionLabel>
+      <div className="flex flex-col gap-2">
+        {queued.map((q) => (
+          <QueueRow
+            key={q.id}
+            item={q}
+            open={active === q.id}
+            onToggle={() => setActive(active === q.id ? null : q.id)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function QueueRow({
+  item,
+  open,
+  onToggle,
+}: {
+  item: QueuedSample;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const qc = useQueryClient();
+  const { data: about } = useAbout();
+  const { data: samples = [] } = useSamples();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState("");
+  const [platform, setPlatform] = useState<Platform>("linux");
+  const [notes, setNotes] = useState("");
+  const [linkTo, setLinkTo] = useState("");
+
+  // The platform reports the release under test, which is the version an
+  // uploader almost always means.
+  const versionValue = version || about?.ccextractor_version || "";
+
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      await qc.invalidateQueries({ queryKey: ["queued-samples"] });
+      await qc.invalidateQueries({ queryKey: ["samples"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That did not work.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card shadow-card">
+      <button
+        onClick={onToggle}
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left"
+      >
+        <FileVideo className="size-4 shrink-0 text-faint" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-medium">
+            {item.original_name}
+            {item.extension}
+          </div>
+          <code className="text-[10px] text-faint">{item.sha.slice(0, 24)}…</code>
+        </div>
+        <Badge variant="secondary">queued</Badge>
+      </button>
+
+      {open && (
+        <div className="border-t bg-muted/30 px-4 py-3">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <label className="text-[11px] text-faint">
+              CCExtractor version
+              <Input
+                className="mt-1 h-7 text-xs"
+                value={versionValue}
+                onChange={(e) => setVersion(e.target.value)}
+                placeholder="0.94"
+              />
+            </label>
+            <label className="text-[11px] text-faint">
+              Platform
+              <select
+                className="mt-1 h-7 w-full rounded-lg border bg-card px-2 text-[12px]"
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value as Platform)}
+              >
+                <option value="linux">linux</option>
+                <option value="windows">windows</option>
+              </select>
+            </label>
+            <label className="text-[11px] text-faint">
+              Notes
+              <Input
+                className="mt-1 h-7 text-xs"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="anything odd about it"
+              />
+            </label>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              disabled={busy || !versionValue}
+              onClick={() =>
+                act(() =>
+                  finalizeUpload(item.id, {
+                    version: versionValue,
+                    platform,
+                    notes,
+                  }),
+                )
+              }
+            >
+              {busy ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}
+              Make it a sample
+            </Button>
+
+            <span className="text-[11px] text-faint">or attach to</span>
+            <select
+              className="h-7 max-w-56 rounded-lg border bg-card px-2 text-[12px]"
+              value={linkTo}
+              onChange={(e) => setLinkTo(e.target.value)}
+            >
+              <option value="">an existing sample…</option>
+              {samples.slice(0, 200).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.original_name}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy || !linkTo}
+              onClick={() => act(() => linkUpload(item.id, Number(linkTo)))}
+            >
+              Attach
+            </Button>
+
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto text-destructive"
+              disabled={busy}
+              onClick={() => act(() => discardUpload(item.id))}
+            >
+              <XCircle /> Discard
+            </Button>
+          </div>
+
+          {error && (
+            <div className="mt-2 text-[11px] text-destructive">{error}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * FTP details for the ingest server.
+ *
+ * Behind a click because it shows a working password, and because asking
+ * for it is what creates the account the first time.
+ */
+function FtpPanel() {
+  const [shown, setShown] = useState(false);
+  const { data, isLoading } = useFtpCredentials(shown);
+
+  return (
+    <section className="mt-8">
+      <SectionLabel>Upload over FTP</SectionLabel>
+      <div className="rounded-xl border bg-card p-4 shadow-card">
+        <p className="text-[12px] text-faint">
+          For files too large to push through the browser. The platform picks
+          up anything dropped into your FTP folder.
+        </p>
+        {!shown ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-3"
+            onClick={() => setShown(true)}
+          >
+            Show my FTP details
+          </Button>
+        ) : isLoading ? (
+          <div className="mt-3 flex items-center gap-2 text-[12px] text-faint">
+            <Loader2 className="size-3 animate-spin" /> fetching
+          </div>
+        ) : data ? (
+          <dl className="mt-3 grid grid-cols-[110px_1fr] gap-y-1 text-[12px]">
+            <dt className="text-faint">Host</dt>
+            <dd><code>{data.host}</code></dd>
+            <dt className="text-faint">Port</dt>
+            <dd><code>{data.port}</code></dd>
+            <dt className="text-faint">Username</dt>
+            <dd><code>{data.username}</code></dd>
+            <dt className="text-faint">Password</dt>
+            <dd><code className="break-all">{data.password}</code></dd>
+          </dl>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-faint">
+      {children}
     </div>
   );
 }

@@ -844,3 +844,156 @@ export function commandPresets(tests: RegressionTest[], limit = 6) {
     .slice(0, limit)
     .map(([command, count]) => ({ command, count }));
 }
+
+/* ---------------- uploads and the queue ---------------- */
+
+export interface QueuedSample {
+  id: number;
+  sha: string;
+  extension: string;
+  original_name: string;
+  user_id: number;
+}
+
+/**
+ * Send a file to the upload queue.
+ *
+ * Multipart, so this cannot go through apiSend: that sets a JSON content
+ * type, and the boundary has to be the one fetch generates for the
+ * FormData.
+ */
+export async function uploadSample(file: File): Promise<QueuedSample> {
+  const session = getSession();
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/samples/upload`, {
+    method: "POST",
+    headers: session ? { Authorization: `Bearer ${session.token}` } : {},
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw apiError(res.status, data.message ?? res.statusText);
+  return data as QueuedSample;
+}
+
+export function useQueuedSamples() {
+  return useQuery({
+    queryKey: ["queued-samples"],
+    staleTime: 15_000,
+    queryFn: () => fetchAll<QueuedSample>("/queued-samples"),
+  });
+}
+
+export const finalizeUpload = (
+  id: number,
+  body: { version: string; platform: Platform; parameters?: string; notes?: string },
+) => apiSend<{ sample_id: number }>("POST", `/queued-samples/${id}/finalize`, body);
+
+export const linkUpload = (id: number, sampleId: number) =>
+  apiSend<{ id: number; sample_id: number }>("POST", `/queued-samples/${id}/link`, {
+    sample_id: sampleId,
+  });
+
+export const discardUpload = (id: number) =>
+  apiDelete<{ id: number; deleted: boolean }>(`/queued-samples/${id}`);
+
+export interface FtpCredentials {
+  host: string;
+  port: string;
+  username: string;
+  password: string;
+}
+
+export function useFtpCredentials(enabled: boolean) {
+  return useQuery({
+    queryKey: ["ftp-credentials"],
+    enabled,
+    staleTime: Infinity,
+    queryFn: () => apiGet<FtpCredentials>("/auth/me/ftp-credentials"),
+  });
+}
+
+/* ---------------- tags and sample editing ---------------- */
+
+export interface Tag {
+  id: number;
+  name: string;
+  description: string;
+}
+
+export function useTags() {
+  return useQuery({
+    queryKey: ["tags"],
+    staleTime: 300_000,
+    queryFn: () => fetchAll<Tag>("/tags"),
+  });
+}
+
+export const createTag = (name: string, description = "") =>
+  apiSend<Tag>("POST", "/tags", { name, description });
+
+export const updateSample = (
+  id: number,
+  patch: { tags?: string[]; notes?: string; parameters?: string; platform?: string; version?: string },
+) => apiSend<{ sample_id: number; tags: string[] }>("PATCH", `/samples/${id}`, patch);
+
+export const deleteSample = (id: number) =>
+  apiDelete<{ sample_id: number; deleted: boolean }>(`/samples/${id}`);
+
+export const mediaInfoFile = (sampleId: number) =>
+  apiGet<StoredFile>(`/samples/${sampleId}/media-info/download`);
+
+export const extraFile = (sampleId: number, extraId: number) =>
+  apiGet<StoredFile>(`/samples/${sampleId}/extra-files/${extraId}/download`);
+
+export const deleteExtraFile = (sampleId: number, extraId: number) =>
+  apiDelete<{ id: number; deleted: boolean }>(
+    `/samples/${sampleId}/extra-files/${extraId}`,
+  );
+
+/* ---------------- baseline variants ---------------- */
+
+export const createVariant = (testId: number, outputId: number, hash: string) =>
+  apiSend<{ id: number; hash: string }>(
+    "POST", `/regression-tests/${testId}/outputs/${outputId}/variants`, { hash },
+  );
+
+export const deleteVariant = (testId: number, outputId: number, variantId: number) =>
+  apiDelete<{ id: number; deleted: boolean }>(
+    `/regression-tests/${testId}/outputs/${outputId}/variants/${variantId}`,
+  );
+
+/* ---------------- account ---------------- */
+
+export const updateAccount = (patch: {
+  name?: string;
+  email?: string;
+  new_password?: string;
+  current_password?: string;
+}) => apiSend<PlatformUser>("PATCH", "/auth/me", patch);
+
+export const sendUserReset = (userId: number) =>
+  apiSend<{ sent: boolean }>("POST", `/users/${userId}/password-reset`, {});
+
+export const deactivateUser = (userId: number) =>
+  apiSend<{ deactivated: boolean }>("POST", `/users/${userId}/deactivate`, {});
+
+/* ---------------- platform ---------------- */
+
+export interface About {
+  platform_commit: string | null;
+  ccextractor_version: string | null;
+  ccextractor_released: string | null;
+  last_tested_commit: string | null;
+}
+
+export function useAbout() {
+  return useQuery({
+    queryKey: ["about"],
+    staleTime: 600_000,
+    queryFn: () => apiGet<About>("/system/about"),
+  });
+}
+
+export const restartRun = (runId: number) =>
+  apiSend<{ status: string; message: string }>("POST", `/runs/${runId}/restart`, {});

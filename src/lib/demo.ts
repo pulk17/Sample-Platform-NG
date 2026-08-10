@@ -95,6 +95,28 @@ const demoBlocked = [
   { user_id: 4242, comment: "Repeated abusive uploads" },
   { user_id: 90210, comment: "Broken CI spam" },
 ];
+// Upload queue state. Mutated in place so a demo upload survives until the
+// page is reloaded, the same way category and role edits do.
+let nextQueueId = 1;
+const demoQueue: {
+  id: number; sha: string; extension: string; original_name: string; user_id: number;
+}[] = [];
+const demoTags = [
+  { id: 1, name: "608", description: "CEA-608 captions" },
+  { id: 2, name: "708", description: "CEA-708 captions" },
+  { id: 3, name: "teletext", description: "DVB teletext" },
+  { id: 4, name: "regression", description: "Guards a past regression" },
+];
+const demoAccount = { name: "Carlos Fernandez", email: "carlos@ccextractor.org" };
+
+/** Stable stand-in hash so an upload looks like the real thing. */
+function fakeSha(seed: string): string {
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return Array.from({ length: 8 }, (_, i) =>
+    ((h * (i + 7)) >>> 0).toString(16).padStart(8, "0")).join("").slice(0, 64);
+}
+
 const demoForbidden = ["bat", "com", "dll", "exe", "sh"];
 
 const SRT_DIFF = `--- expected
@@ -221,6 +243,144 @@ function route(path: string, method: string, body: unknown): Response {
   const limit = Number(q.get("limit") ?? 50);
   const offset = Number(q.get("offset") ?? 0);
   const p = (i: number) => seg[i];
+
+  // Routes added for the new endpoints go first: several of the
+  // handlers below match on a path prefix alone, so a more specific
+  // path placed after them would never be reached.
+  // ---- uploads and the queue ----
+  if (seg[0] === "samples" && seg[1] === "upload" && method === "POST") {
+    const file = body instanceof FormData ? (body.get("file") as File | null) : null;
+    const name = file?.name ?? "uploaded.ts";
+    const dot = name.lastIndexOf(".");
+    const row = {
+      id: nextQueueId++,
+      sha: fakeSha(name),
+      extension: dot > 0 ? name.slice(dot) : "",
+      original_name: dot > 0 ? name.slice(0, dot) : name,
+      user_id: 1,
+    };
+    demoQueue.push(row);
+    return OK(row, 201);
+  }
+  if (seg[0] === "queued-samples") {
+    const id = Number(p(1));
+    const row = demoQueue.find((r) => r.id === id);
+    if (seg.length === 1) return OK(paginate(demoQueue, limit, offset));
+    if (!row) return ERR(404, `Queued sample ${id} not found.`);
+    if (seg[2] === "finalize" && method === "POST") {
+      demoQueue.splice(demoQueue.indexOf(row), 1);
+      const created = {
+        id: 90000 + row.id,
+        sha: row.sha,
+        extension: row.extension.replace(".", ""),
+        original_name: row.original_name,
+        tags: [] as string[],
+        test_count: 0,
+      };
+      samples.unshift(created);
+      sampleById.set(created.id, created);
+      return OK({ sample_id: created.id, sha: created.sha, original_name: created.original_name }, 201);
+    }
+    if (seg[2] === "link" && method === "POST") {
+      const sampleId = (body as { sample_id?: number })?.sample_id ?? 0;
+      if (!sampleById.has(sampleId)) return ERR(404, `Sample ${sampleId} not found.`);
+      demoQueue.splice(demoQueue.indexOf(row), 1);
+      return OK({ id: 500 + row.id, sample_id: sampleId, filename: `${row.sha}_1${row.extension}` }, 201);
+    }
+    if (method === "DELETE") {
+      demoQueue.splice(demoQueue.indexOf(row), 1);
+      return OK({ id, deleted: true });
+    }
+    return OK(row);
+  }
+
+  // ---- account and platform ----
+  if (seg[0] === "auth" && seg[1] === "me" && seg[2] === "ftp-credentials")
+    return OK({ host: "sampleplatform.ccextractor.org", port: "21", username: "sp_demo_user", password: "8Xk2mQ7rTn4wLp9v" });
+  if (seg[0] === "auth" && seg[1] === "me" && method === "PATCH") {
+    const patch = (body as Record<string, string>) ?? {};
+    if (("email" in patch || "new_password" in patch) && !patch.current_password)
+      return ERR(403, "current_password is required to change your email or password.");
+    if (patch.name) demoAccount.name = patch.name;
+    if (patch.email) demoAccount.email = patch.email;
+    return OK({ ...DEMO_USERS[0], ...demoAccount });
+  }
+  if (seg[0] === "auth" && (seg[1] === "signup" || seg[1] === "password-reset"))
+    return OK({ sent: true }, 202);
+  if (seg[0] === "system" && seg[1] === "about")
+    return OK({
+      platform_commit: "fd0d5b3a91c4e77f2b6d84a0c1e5f39ab7d2c810",
+      ccextractor_version: "0.94",
+      ccextractor_released: "2020-08-16",
+      last_tested_commit: runs[0]?.commit ?? null,
+    });
+  if (seg[0] === "users" && seg[2] === "password-reset" && method === "POST")
+    return OK({ user_id: Number(p(1)), sent: true }, 202);
+  if (seg[0] === "users" && seg[2] === "deactivate" && method === "POST") {
+    const id = Number(p(1));
+    const u = DEMO_USERS.find((x) => x.user_id === id);
+    if (u) {
+      u.name = `Anonymous ${id}`;
+      u.email = `unknown${id}@ccextractor.org`;
+    }
+    return OK({ user_id: id, deactivated: true });
+  }
+
+  // ---- tags ----
+  if (seg[0] === "tags") {
+    if (method === "POST") {
+      const name = (body as { name?: string })?.name ?? "";
+      if (demoTags.some((t) => t.name === name)) return ERR(409, `Tag '${name}' already exists.`);
+      const row = { id: Date.now(), name, description: (body as { description?: string })?.description ?? "" };
+      demoTags.push(row);
+      return OK(row, 201);
+    }
+    return OK(paginate(demoTags, limit, offset));
+  }
+
+  // ---- restart ----
+  if (seg[0] === "runs" && seg[2] === "restart" && method === "POST")
+    return OK({ run_id: Number(p(1)), action: "restart", status: "accepted", message: "Run has been queued to run again." }, 202);
+
+  // ---- file locations ----
+  if (seg.includes("download")) {
+    const last = seg[seg.length - 2];
+    return OK({
+      sample_id: Number(p(1)) || undefined,
+      filename: `${last}-demo-file`,
+      download_url: "https://storage.googleapis.com/ccextractor-samples/demo-signed-url",
+      storage_status: "ok",
+    });
+  }
+
+  // ---- baseline variants ----
+  if (seg[0] === "regression-tests" && seg.includes("variants")) {
+    if (method === "POST")
+      return OK({ id: Date.now(), hash: (body as { hash?: string })?.hash ?? "" }, 201);
+    if (method === "DELETE") return OK({ id: Number(seg[seg.length - 1]), deleted: true });
+  }
+
+  // ---- sample edits ----
+  if (seg[0] === "samples" && seg.length === 2 && method === "PATCH") {
+    const s = sampleById.get(Number(p(1)));
+    if (!s) return ERR(404, "not found");
+    const tags = (body as { tags?: string[] })?.tags;
+    if (tags) {
+      const unknown = tags.filter((t) => !demoTags.some((d) => d.name === t));
+      if (unknown.length) return ERR(400, `Unknown tags: ${unknown.join(", ")}`);
+      s.tags = tags;
+    }
+    return OK({ sample_id: s.id, tags: s.tags });
+  }
+  if (seg[0] === "samples" && seg.length === 2 && method === "DELETE") {
+    const s = sampleById.get(Number(p(1)));
+    if (!s) return ERR(404, "not found");
+    if (s.test_count) return ERR(409, `Sample ${s.id} is used by ${s.test_count} regression test(s). Delete those first.`);
+    samples.splice(samples.indexOf(s), 1);
+    sampleById.delete(s.id);
+    return OK({ sample_id: s.id, deleted: true });
+  }
+
 
   // auth
   if (seg[0] === "auth" && seg[1] === "tokens" && method === "POST")
@@ -493,7 +653,13 @@ export function installDemoFetch() {
     const path = typeof input === "string" ? input : input instanceof URL ? input.pathname + input.search : (input as Request).url;
     if (path.includes("/api/v1/")) {
       let body: unknown = undefined;
-      try { body = init?.body ? JSON.parse(init.body as string) : undefined; } catch { /* ignore */ }
+      if (init?.body instanceof FormData) {
+        // Multipart: hand the FormData straight to the handler, which
+        // needs the file name rather than a parsed object.
+        body = init.body;
+      } else {
+        try { body = init?.body ? JSON.parse(init.body as string) : undefined; } catch { /* ignore */ }
+      }
       await new Promise((r) => setTimeout(r, 120)); // tiny latency so loading states show
       return route(path, (init?.method ?? "GET").toUpperCase(), body);
     }

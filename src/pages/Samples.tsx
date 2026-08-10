@@ -1,13 +1,23 @@
 import { Link } from "@tanstack/react-router";
-import { Copy, Download, FileVideo, Loader2, Search } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Copy, Download, FileVideo, Loader2, Search, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm";
 import { Input } from "@/components/ui/input";
 import { AnimatedSheet, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { getSession } from "@/lib/auth";
 import {
+  deleteSample,
+  extraFile,
+  mediaInfoFile,
   sampleFile,
+  updateSample,
+  useTags,
+  type StoredFile,
   useRegressionTests,
   useSampleDetails,
   useSampleHistory,
@@ -171,6 +181,7 @@ function SampleDetail({ sample }: { sample: Sample }) {
   const { data: tests = [] } = useRegressionTests();
   const sampleTests = tests.filter((t) => t.sample_id === sample.id);
   const upload = details?.upload;
+  const admin = getSession()?.role === "admin";
 
   // Latest result per platform → the "test status" summary the old page had.
   const perPlatform = useMemo(() => {
@@ -230,13 +241,29 @@ function SampleDetail({ sample }: { sample: Sample }) {
               </>
             )}
           </dl>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] text-faint">Tags:</span>
-            {sample.tags.length ? (
-              sample.tags.map((t) => <Badge key={t} variant="secondary">{t}</Badge>)
-            ) : (
-              <span className="text-[11px] text-faint">no tags yet</span>
-            )}
+          {admin ? (
+            <TagEditor sample={sample} />
+          ) : (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-faint">Tags:</span>
+              {sample.tags.length ? (
+                sample.tags.map((t) => <Badge key={t} variant="secondary">{t}</Badge>)
+              ) : (
+                <span className="text-[11px] text-faint">no tags yet</span>
+              )}
+            </div>
+          )}
+
+          <div className="mt-3 flex flex-wrap items-center gap-3 border-t pt-3">
+            <FileLink label="media info" locate={() => mediaInfoFile(sample.id)} />
+            {(details?.extra_files ?? []).map((x) => (
+              <FileLink
+                key={x.id}
+                label={x.original_name}
+                locate={() => extraFile(sample.id, x.id)}
+              />
+            ))}
+            {admin && <span className="ml-auto"><DeleteSample sample={sample} /></span>}
           </div>
         </section>
 
@@ -454,5 +481,165 @@ function MediaNode({ node, depth = 0 }: { node: MediaInfoNode; depth?: number })
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * Tag editing for one sample.
+ *
+ * Tags are picked from the platform's list rather than typed, because the
+ * API matches them by name and a typo would just be rejected. Creating a
+ * new tag is an admin action of its own, on the administration page.
+ */
+function TagEditor({ sample }: { sample: Sample }) {
+  const qc = useQueryClient();
+  const { data: tags = [] } = useTags();
+  const [chosen, setChosen] = useState<string[]>(sample.tags);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const dirty =
+    chosen.length !== sample.tags.length ||
+    chosen.some((t) => !sample.tags.includes(t));
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateSample(sample.id, { tags: chosen });
+      await qc.invalidateQueries({ queryKey: ["samples"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That did not work.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] text-faint">Tags:</span>
+      {tags.map((t) => {
+        const on = chosen.includes(t.name);
+        return (
+          <button
+            key={t.id}
+            title={t.description}
+            onClick={() =>
+              setChosen(on ? chosen.filter((c) => c !== t.name) : [...chosen, t.name])
+            }
+            className={cn(
+              "cursor-pointer rounded-md border px-2 py-0.5 text-[11px] transition-colors",
+              on
+                ? "border-primary/40 bg-accent text-accent-foreground"
+                : "border-transparent text-faint hover:border-border hover:text-muted-foreground",
+            )}
+          >
+            {t.name}
+          </button>
+        );
+      })}
+      {tags.length === 0 && (
+        <span className="text-[11px] text-faint">no tags defined yet</span>
+      )}
+      {dirty && (
+        <Button size="sm" variant="secondary" disabled={busy} onClick={save}>
+          {busy ? <Loader2 className="animate-spin" /> : null} Save tags
+        </Button>
+      )}
+      {error && <span className="text-[11px] text-destructive">{error}</span>}
+    </div>
+  );
+}
+
+/** Deletes a sample, refused by the API while any test still uses it. */
+function DeleteSample({ sample }: { sample: Sample }) {
+  const qc = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const go = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteSample(sample.id);
+      await qc.invalidateQueries({ queryKey: ["samples"] });
+      setConfirming(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That did not work.");
+      setConfirming(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="text-destructive"
+        onClick={() => setConfirming(true)}
+      >
+        <Trash2 /> Delete sample
+      </Button>
+      {error && <div className="mt-1 text-[11px] text-destructive">{error}</div>}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={`Delete ${sample.original_name}?`}
+        body={
+          <>
+            The media file, its media info and any accompanying files are
+            removed from the repository. <b>This cannot be undone.</b> The
+            platform refuses while a regression test still uses the sample.
+          </>
+        }
+        confirmLabel={busy ? "Deleting…" : "Delete sample"}
+        busy={busy}
+        onConfirm={go}
+      />
+    </>
+  );
+}
+
+/** Resolves a signed URL on click, the same way the baseline buttons do. */
+function FileLink({
+  label,
+  locate,
+}: {
+  label: string;
+  locate: () => Promise<StoredFile>;
+}) {
+  const [state, setState] = useState<"idle" | "busy" | "unavailable">("idle");
+
+  const go = async () => {
+    setState("busy");
+    try {
+      const file = await locate();
+      if (!file.download_url) {
+        setState("unavailable");
+        return;
+      }
+      window.open(file.download_url, "_blank", "noopener");
+      setState("idle");
+    } catch {
+      setState("unavailable");
+    }
+  };
+
+  return (
+    <button
+      onClick={go}
+      disabled={state === "busy"}
+      className="flex cursor-pointer items-center gap-1 text-[11px] font-medium text-primary hover:underline disabled:cursor-default disabled:text-faint disabled:no-underline"
+    >
+      {state === "busy" ? (
+        <Loader2 className="size-3 animate-spin" />
+      ) : (
+        <Download className="size-3" />
+      )}
+      {state === "unavailable" ? "on server only" : label}
+    </button>
   );
 }
