@@ -266,6 +266,32 @@ function liveRun(run: SnapRun, p: SnapPlatform) {
   };
 }
 
+/** Statuses the API counts as occupying a runner rather than waiting. */
+const RUNNING_STATUSES = ["preparation", "testing"];
+
+/**
+ * The CI queue, read off the same runs everything else shows.
+ *
+ * The API returns every run that has not finished or been canceled, oldest
+ * first, so deriving it here keeps the queue from advertising runs that
+ * cannot be opened from the test results page.
+ */
+function queueRows() {
+  return [...platformRuns.values()]
+    .filter(({ p }) => p.status !== "completed" && p.status !== "canceled")
+    .sort((a, b) => a.p.test_id - b.p.test_id)
+    .map(({ run, p }) => ({
+      run_id: p.test_id,
+      status: p.status,
+      platform: p.platform,
+      queued_at: run.created_at,
+      started_at: p.started_at,
+      // Only filled in when the caller asks for ?status=queued, which the
+      // console never does.
+      position: null,
+    }));
+}
+
 function route(path: string, method: string, body: unknown): Response {
   const url = new URL(path, "http://x");
   const q = url.searchParams;
@@ -459,11 +485,14 @@ function route(path: string, method: string, body: unknown): Response {
       { name: "database", status: "ok", message: null },
       { name: "local_storage", status: "ok", message: null },
       { name: "gcs", status: "ok", message: null }] });
-  if (seg[0] === "system" && seg[1] === "queue")
-    return OK({ ...paginate([
-      { run_id: 9349, platform: "windows", status: "running", position: null, queued_at: nowISO(), started_at: nowISO() },
-      { run_id: 9350, platform: "linux", status: "queued", position: 1, queued_at: nowISO(), started_at: null },
-    ], 50, 0), meta: { queue_depth: 1, running_count: 1 } });
+  if (seg[0] === "system" && seg[1] === "queue") {
+    const rows = queueRows();
+    const running = rows.filter((r) => RUNNING_STATUSES.includes(r.status));
+    return OK({
+      ...paginate(rows, limit, offset),
+      meta: { queue_depth: rows.length - running.length, running_count: running.length },
+    });
+  }
 
   // platform configuration
   if (seg[0] === "system" && seg[1] === "maintenance") {
