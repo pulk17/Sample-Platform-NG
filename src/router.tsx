@@ -7,6 +7,7 @@ import {
 
 import { DEMO } from "@/lib/demo";
 import { AppShell } from "@/components/layout/AppShell";
+import { ResetPassword } from "@/components/ResetPassword";
 import { Account } from "@/pages/Account";
 import { Admin } from "@/pages/Admin";
 import { RunDetail } from "@/pages/RunDetail";
@@ -102,6 +103,14 @@ const statusRoute = createRoute({
   component: Status,
 });
 
+// Reached from a recovery email, so it must render with no session. The
+// shell hands this path straight through.
+const resetRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/reset",
+  component: ResetPassword,
+});
+
 const accountRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/account",
@@ -128,6 +137,7 @@ const routeTree = rootRoute.addChildren([
   uploadRoute,
   samplesRoute,
   statusRoute,
+  resetRoute,
   accountRoute,
   adminRoute,
 ]);

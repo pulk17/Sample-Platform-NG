@@ -73,6 +73,9 @@ export function AppShell() {
     return () => window.removeEventListener(SESSION_CHANGED, sync);
   }, []);
 
+  // The reset screen arrives from an email with nobody signed in, so it
+  // renders on its own rather than behind the sign-in gate.
+  if (pathname === "/reset") return <Outlet />;
   if (!session) return <Login onDone={() => setSession(getSession())} />;
 
   return (

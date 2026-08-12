@@ -378,6 +378,11 @@ function route(path: string, method: string, body: unknown): Response {
         "https://github.com/login/oauth/authorize?client_id=demo&scope=public_repo",
     });
   }
+  if (seg[0] === "auth" && seg[1] === "password-reset" && seg[2] === "complete") {
+    const body_ = (body as { mac?: string; password?: string }) ?? {};
+    if (body_.mac === "bad") return ERR(400, "That reset link is not valid any more.");
+    return OK({ user_id: 1, password_changed: true });
+  }
   if (seg[0] === "auth" && (seg[1] === "signup" || seg[1] === "password-reset"))
     return OK({ sent: true }, 202);
   if (seg[0] === "system" && seg[1] === "about")

@@ -993,6 +993,17 @@ export const requestSignup = (email: string) =>
 export const requestPasswordReset = (email: string) =>
   apiSend<{ sent: boolean }>("POST", "/auth/password-reset", { email });
 
+/** Finish a reset from the link in the email. Nobody is signed in here. */
+export const completePasswordReset = (body: {
+  user_id: number;
+  expires: number;
+  mac: string;
+  password: string;
+}) =>
+  apiSend<{ user_id: number; password_changed: boolean }>(
+    "POST", "/auth/password-reset/complete", body,
+  );
+
 export interface GithubLink {
   linked: boolean;
   github_login: string | null;
