@@ -108,6 +108,10 @@ const demoTags = [
   { id: 4, name: "regression", description: "Guards a past regression" },
 ];
 const demoAccount = { name: "Carlos Fernandez", email: "carlos@ccextractor.org" };
+const demoGithub: { linked: boolean; github_login: string | null } = {
+  linked: true,
+  github_login: "carlosfernandez",
+};
 
 // Baselines get edited here (variants added and dropped), so keep a mutable
 // copy in the API's own shape instead of reading the snapshot every time.
@@ -360,6 +364,19 @@ function route(path: string, method: string, body: unknown): Response {
     if (patch.name) demoAccount.name = patch.name;
     if (patch.email) demoAccount.email = patch.email;
     return OK({ ...DEMO_USERS[0], ...demoAccount });
+  }
+  if (seg[0] === "auth" && seg[1] === "me" && seg[2] === "github") {
+    if (method === "DELETE") {
+      demoGithub.linked = false;
+      demoGithub.github_login = null;
+      return OK({ linked: false, github_login: null });
+    }
+    return OK({
+      ...demoGithub,
+      // Client id and scope only, the same as the real response.
+      authorize_url:
+        "https://github.com/login/oauth/authorize?client_id=demo&scope=public_repo",
+    });
   }
   if (seg[0] === "auth" && (seg[1] === "signup" || seg[1] === "password-reset"))
     return OK({ sent: true }, 202);

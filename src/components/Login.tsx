@@ -4,25 +4,59 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { requestPasswordReset, requestSignup } from "@/lib/api";
 import { login } from "@/lib/auth";
 import { DEMO } from "@/lib/demo";
 
+const LINK = "cursor-pointer text-primary hover:underline";
+
+type Mode = "signin" | "reset" | "signup";
+
+const COPY: Record<Mode, { title: string; action: string; sent: string }> = {
+  signin: { title: "", action: "", sent: "" },
+  reset: {
+    title: "Reset your password",
+    action: "Email me a reset link",
+    // Deliberately the same whether or not the address has an account: a
+    // different answer here would tell an anonymous caller who is registered.
+    sent: "If that address has an account, a reset link is on its way.",
+  },
+  signup: {
+    title: "Create an account",
+    action: "Email me a signup link",
+    sent: "If that address can be registered, a signup link is on its way.",
+  },
+};
+
 /** Full-screen sign-in against POST /api/v1/auth/tokens. */
 export function Login({ onDone }: { onDone: () => void }) {
+  const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState(DEMO ? "carlos@ccextractor.org" : "");
   const [password, setPassword] = useState(DEMO ? "demo" : "");
   const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const go = (next: Mode) => {
+    setMode(next);
+    setError(null);
+    setSent(false);
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await login(email, password);
-      onDone();
+      if (mode === "signin") {
+        await login(email, password);
+        onDone();
+      } else {
+        await (mode === "reset" ? requestPasswordReset : requestSignup)(email);
+        setSent(true);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "That did not work.");
     } finally {
       setBusy(false);
     }
@@ -58,6 +92,10 @@ export function Login({ onDone }: { onDone: () => void }) {
           </div>
         </div>
 
+        {mode !== "signin" && (
+          <div className="mb-4 text-[13px] font-medium">{COPY[mode].title}</div>
+        )}
+
         <label className="mb-1 block text-xs font-medium text-muted-foreground">Email</label>
         <Input
           type="email"
@@ -67,22 +105,58 @@ export function Login({ onDone }: { onDone: () => void }) {
           placeholder="you@example.com"
           className="mb-3"
         />
-        <label className="mb-1 block text-xs font-medium text-muted-foreground">Password</label>
-        <Input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="mb-4"
-        />
+        {mode === "signin" && (
+          <>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              Password
+            </label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="mb-4"
+            />
+          </>
+        )}
         {error && (
           <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-xs text-destructive">
             {error}
           </div>
         )}
-        <Button className="w-full" disabled={busy || !email || !password}>
-          {busy ? <Loader2 className="animate-spin" /> : <LogIn />} Sign in
+        {sent && (
+          <div className="mb-3 rounded-lg border border-success/30 bg-success/8 px-3 py-2 text-xs text-success">
+            {COPY[mode].sent}
+          </div>
+        )}
+        <Button
+          className="w-full"
+          disabled={busy || !email || (mode === "signin" && !password)}
+        >
+          {busy ? <Loader2 className="animate-spin" /> : <LogIn />}
+          {mode === "signin" ? "Sign in" : COPY[mode].action}
         </Button>
-        <p className="mt-4 text-center text-[11px] text-faint">
+
+        {/* Both links finish on the classic site, which is where accounts are
+            created and passwords are set. */}
+        <div className="mt-4 flex justify-center gap-3 text-[11px]">
+          {mode === "signin" ? (
+            <>
+              <button type="button" onClick={() => go("reset")} className={LINK}>
+                Forgot your password?
+              </button>
+              <span className="text-faint">·</span>
+              <button type="button" onClick={() => go("signup")} className={LINK}>
+                Create an account
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={() => go("signin")} className={LINK}>
+              Back to sign in
+            </button>
+          )}
+        </div>
+
+        <p className="mt-3 text-center text-[11px] text-faint">
           {DEMO
             ? "Interactive demo — sign in to explore (any credentials work)."
             : "Issues an API token via /api/v1/auth/tokens — same accounts as the classic site."}

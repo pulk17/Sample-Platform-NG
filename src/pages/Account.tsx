@@ -1,11 +1,17 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Loader2, UserRound, UserX } from "lucide-react";
+import { ExternalLink, GitBranch, KeyRound, Loader2, UserRound, UserX } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import { Input } from "@/components/ui/input";
-import { deactivateUser, updateAccount, useMe } from "@/lib/api";
+import {
+  deactivateUser,
+  unlinkGithub,
+  updateAccount,
+  useGithubLink,
+  useMe,
+} from "@/lib/api";
 import { logout, setSessionEmail } from "@/lib/auth";
 
 /**
@@ -37,6 +43,7 @@ export function Account() {
         <div className="flex flex-col gap-6">
           <ProfileSection name={me.name} email={me.email} />
           <PasswordSection />
+          <GithubSection />
           <CloseSection userId={me.user_id} />
         </div>
       )}
@@ -212,6 +219,81 @@ function PasswordSection() {
           )}
           {error && <span className="text-[11px] text-destructive">{error}</span>}
         </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The GitHub connection, used for runs on your own forks and pull requests.
+ *
+ * Connecting is an OAuth redirect that finishes on the platform's classic
+ * callback, so this sends you there and picks the result up afterwards
+ * rather than handling the exchange itself.
+ */
+function GithubSection() {
+  const qc = useQueryClient();
+  const { data, isLoading } = useGithubLink();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const disconnect = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await unlinkGithub();
+      await qc.invalidateQueries({ queryKey: ["github-link"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That did not work.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section>
+      <SectionLabel>
+        <GitBranch className="mr-1 inline size-3.5" /> GitHub
+      </SectionLabel>
+      <div className="rounded-xl border bg-card p-4 shadow-card">
+        {isLoading && <div className="h-8 animate-pulse rounded-md bg-muted/50" />}
+        {data && (
+          <>
+            <p className="mb-3 text-[13px] text-muted-foreground">
+              {data.linked ? (
+                <>
+                  Connected as{" "}
+                  <span className="font-medium text-foreground">@{data.github_login}</span>.
+                  Runs on your own forks and pull requests use this.
+                </>
+              ) : (
+                <>
+                  Not connected. Connecting lets the platform queue runs for your own
+                  forks and pull requests.
+                </>
+              )}
+            </p>
+            {error && <div className="mb-2 text-[11px] text-destructive">{error}</div>}
+            {data.linked ? (
+              <Button size="sm" variant="outline" disabled={busy} onClick={disconnect}>
+                {busy && <Loader2 className="animate-spin" />} Disconnect
+              </Button>
+            ) : (
+              <a href={data.authorize_url} target="_blank" rel="noreferrer">
+                <Button size="sm" variant="secondary">
+                  <ExternalLink /> Connect to GitHub
+                </Button>
+              </a>
+            )}
+            {/* The redirect finishes on the classic site, so this page will
+                not know about it until it is loaded again. */}
+            <p className="mt-2 text-[11px] text-faint">
+              {data.linked
+                ? "Disconnecting only forgets the platform's copy. Withdraw the authorisation itself from your GitHub applications page."
+                : "GitHub opens in a new tab and hands you back to the classic site; reload this page once it is done."}
+            </p>
+          </>
+        )}
       </div>
     </section>
   );

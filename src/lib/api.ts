@@ -987,6 +987,29 @@ export function useMe() {
   });
 }
 
+export const requestSignup = (email: string) =>
+  apiSend<{ sent: boolean }>("POST", "/auth/signup", { email });
+
+export const requestPasswordReset = (email: string) =>
+  apiSend<{ sent: boolean }>("POST", "/auth/password-reset", { email });
+
+export interface GithubLink {
+  linked: boolean;
+  github_login: string | null;
+  authorize_url: string;
+}
+
+export function useGithubLink() {
+  return useQuery({
+    queryKey: ["github-link"],
+    staleTime: 60_000,
+    queryFn: () => apiGet<GithubLink>("/auth/me/github"),
+  });
+}
+
+export const unlinkGithub = () =>
+  apiDelete<{ linked: boolean }>("/auth/me/github");
+
 export const updateAccount = (patch: {
   name?: string;
   email?: string;
