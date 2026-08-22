@@ -169,7 +169,7 @@ export function Workspace() {
           )}
         </div>
         <div className="border-t px-3 py-2 text-[11px] text-faint">
-          {list.length} of {tests.length} tests · live
+          {list.length} of {tests.length} tests
         </div>
       </div>
       {listPane.handle}
@@ -384,7 +384,7 @@ function Detail({ test }: { test: RegressionTest }) {
             <div className="flex items-center gap-4 rounded-xl border bg-muted/30 p-3.5">
               <Sparkline results={liveResults} className="gap-1 [&>span]:w-2" />
               <span className="text-[11px] text-faint">
-                {passN} pass · {liveResults.length - passN} fail · runs where it actually ran
+                {passN} pass · {liveResults.length - passN} fail · runs that included this test
               </span>
             </div>
           ) : (

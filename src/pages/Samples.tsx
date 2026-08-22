@@ -62,7 +62,7 @@ export function Samples() {
       <div className="sticky top-0 z-10 border-b bg-card/85 px-6 py-3 backdrop-blur">
         <div className="flex items-center gap-3">
           <h1 className="text-[15px] font-semibold tracking-tight">Samples</h1>
-          <span className="text-xs text-faint">{samples.length} media samples · live</span>
+          <span className="text-xs text-faint">{samples.length} media samples</span>
           <div className="relative ml-auto">
             <Search className="absolute left-2.5 top-2 size-3.5 text-faint" />
             <Input

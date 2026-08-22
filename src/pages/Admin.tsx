@@ -47,7 +47,7 @@ export function Admin() {
     <div className="mx-auto max-w-3xl px-6 py-6">
       <h1 className="mb-1 text-[15px] font-semibold tracking-tight">Administration</h1>
       <p className="mb-6 text-[13px] text-faint">
-        Changes to the suite and platform happen here — never inline on browse pages.
+        Manage users, categories, tags, CI availability and API tokens.
       </p>
 
       <div className="flex flex-col gap-6">
@@ -63,7 +63,7 @@ export function Admin() {
             <div>
               <div className="text-[13px] font-medium">New regression test</div>
               <div className="text-xs text-faint">
-                Guided: sample → command → dry run → bless output → activate.
+                Pick a sample, set the command, verify the output, then activate.
               </div>
             </div>
           </Link>

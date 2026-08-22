@@ -61,7 +61,7 @@ export function Triage() {
         <div className="flex items-center gap-3">
           <h1 className="text-[15px] font-semibold tracking-tight">Home</h1>
           <span className="text-xs text-faint">
-            latest runs with failures · live from the platform
+            recent runs that finished with failures
           </span>
           <span className="ml-auto flex items-center gap-3">
             {failingNow > 0 && (

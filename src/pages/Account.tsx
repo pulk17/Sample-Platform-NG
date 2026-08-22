@@ -290,7 +290,7 @@ function GithubSection() {
             <p className="mt-2 text-[11px] text-faint">
               {data.linked
                 ? "Disconnecting only forgets the platform's copy. Withdraw the authorisation itself from your GitHub applications page."
-                : "GitHub opens in a new tab and hands you back to the classic site; reload this page once it is done."}
+                : "GitHub opens in a new tab. Reload this page once you are done there."}
             </p>
           </>
         )}

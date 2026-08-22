@@ -159,7 +159,7 @@ export function Login({ onDone }: { onDone: () => void }) {
         <p className="mt-3 text-center text-[11px] text-faint">
           {DEMO
             ? "Interactive demo — sign in to explore (any credentials work)."
-            : "Issues an API token via /api/v1/auth/tokens — same accounts as the classic site."}
+            : "Use the same account as the CCExtractor Sample Platform."}
         </p>
       </motion.form>
     </div>

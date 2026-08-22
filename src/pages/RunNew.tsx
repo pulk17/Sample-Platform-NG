@@ -86,8 +86,7 @@ export function RunNew() {
             <GitBranch className="size-4 text-primary" /> New run
           </h1>
           <p className="text-[13px] text-faint">
-            Test any fork or commit against the suite — the old "customized tests", queued
-            on real CI VMs.
+            Run the regression suite against any fork or commit.
           </p>
         </div>
       </div>

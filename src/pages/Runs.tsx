@@ -23,7 +23,7 @@ export function Runs() {
         <div className="flex items-center gap-3">
           <h1 className="text-[15px] font-semibold tracking-tight">Test results</h1>
           <span className="text-xs text-faint">
-            live · Linux &amp; Windows grouped per commit · refreshes every 30s
+            Linux and Windows grouped per commit · refreshes every 30s
           </span>
           <Link to="/runs/new" className="ml-auto">
             <Button size="sm" variant="secondary">New run</Button>

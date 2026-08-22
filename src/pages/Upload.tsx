@@ -99,7 +99,7 @@ export function Upload() {
         <div className="flex items-baseline gap-3">
           <h1 className="text-[15px] font-semibold tracking-tight">Sample upload</h1>
           <span className="text-xs text-faint">
-            duplicates are caught in the browser, before any transfer
+            files are checked against the library before uploading
           </span>
         </div>
       </div>

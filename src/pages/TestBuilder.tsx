@@ -91,9 +91,9 @@ export function TestBuilder() {
           Test #{saved} created as a draft
         </h1>
         <p className="max-w-md text-[13px] text-faint">
-          It stays inactive until its output is verified on a real run and a
-          baseline is recorded. Queue a run scoped to just this test to see
-          what it actually produces on both platforms.
+          It stays inactive until its output is verified and a baseline is
+          recorded. Queue a run scoped to this test to see what it produces on
+          both platforms.
         </p>
         <div className="flex gap-2">
           <Button onClick={() => navigate({ to: "/runs/new", search: { test: saved } })}>
@@ -130,7 +130,7 @@ export function TestBuilder() {
             <FlaskConical className="size-4 text-primary" /> New regression test
           </h1>
           <p className="text-[13px] text-faint">
-            Define → verify on real CI → activate. Stored as a draft until verified.
+            Define the test, verify its output on a run, then activate it.
           </p>
         </div>
       </div>

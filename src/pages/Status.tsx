@@ -47,7 +47,7 @@ export function Status() {
       <div className="sticky top-0 z-10 border-b bg-card/85 px-6 py-3 backdrop-blur">
         <div className="flex items-center gap-3">
           <h1 className="text-[15px] font-semibold tracking-tight">Platform status</h1>
-          <span className="text-xs text-faint">health, queue and last master run · live</span>
+          <span className="text-xs text-faint">health, queue and last run on master</span>
         </div>
       </div>
 
