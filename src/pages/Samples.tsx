@@ -282,7 +282,8 @@ function SampleDetail({ sample }: { sample: Sample }) {
                   </div>
                   {r ? (
                     <Link
-                      to="/runs"
+                      to="/runs/$runId"
+                      params={{ runId: String(r.run_id) }}
                       className="flex items-center gap-1.5 text-[13px] font-medium hover:underline"
                     >
                       <span

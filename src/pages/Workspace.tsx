@@ -411,7 +411,8 @@ function Detail({ test }: { test: RegressionTest }) {
                       {rows.slice(0, 6).map((h, i) => (
                         <Link
                           key={i}
-                          to="/runs"
+                          to="/runs/$runId"
+                          params={{ runId: String(h.run_id) }}
                           className="flex items-center gap-2 text-[12px] transition-colors hover:text-foreground"
                           title={`run ${h.run_id} · ${h.commit_sha.slice(0, 9)}`}
                         >
